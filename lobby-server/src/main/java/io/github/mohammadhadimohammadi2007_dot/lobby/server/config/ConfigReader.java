@@ -260,6 +260,22 @@ public final class ConfigReader {
     }
 
     /**
+     * List of raw text lines at {@code path}, preserving empty lines, space-only lines and
+     * leading/trailing spaces (used for tab header/footer and scoreboard titles).
+     */
+    public List<String> rawStringList(String path, List<String> fallback) {
+        ConfigurationNode node = user.node(split(path));
+        if (node.virtual() || node.raw() == null) {
+            ConfigurationNode bundled = defaults.node(split(path));
+            return bundled.virtual() || !bundled.isList() ? fallback : rawListOf(bundled);
+        }
+        if (!node.isList()) {
+            return invalid(path, node.raw(), "a list like [\"a\", \"b\"]", fallback);
+        }
+        return rawListOf(node);
+    }
+
+    /**
      * A list of lines that may be text or sections, keeping empty lines (used for scoreboard lines, where an
      * empty line is a spacer). Sections come back as maps of their values. A missing option gives the
      * bundled list, or an empty one.
@@ -335,6 +351,15 @@ public final class ConfigReader {
             if (raw != null && !String.valueOf(raw).isBlank()) {
                 values.add(String.valueOf(raw).trim());
             }
+        }
+        return List.copyOf(values);
+    }
+
+    private static List<String> rawListOf(ConfigurationNode node) {
+        List<String> values = new ArrayList<>();
+        for (ConfigurationNode child : node.childrenList()) {
+            Object raw = child.raw();
+            values.add(raw == null ? "" : String.valueOf(raw));
         }
         return List.copyOf(values);
     }

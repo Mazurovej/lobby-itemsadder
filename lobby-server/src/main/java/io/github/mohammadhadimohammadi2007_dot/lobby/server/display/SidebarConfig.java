@@ -77,8 +77,8 @@ public record SidebarConfig(boolean enabled, List<Board> boards) {
             String path = "scoreboard.boards." + name;
             int interval = reader.integer(path + ".update-interval", MIN_INTERVAL_TICKS, MAX_INTERVAL_TICKS,
                     DEFAULT_INTERVAL_TICKS);
-            List<String> titles = reader.stringList(path + ".title", List.of(name));
-            List<String> legacyTitles = reader.stringList(path + ".legacy-title", List.of());
+            List<String> titles = reader.rawStringList(path + ".title", List.of(name));
+            List<String> legacyTitles = reader.rawStringList(path + ".legacy-title", List.of());
             List<TieredText> title = new ArrayList<>();
             for (int i = 0; i < Math.max(1, titles.size()); i++) {
                 String modern = titles.isEmpty() ? name : titles.get(i);

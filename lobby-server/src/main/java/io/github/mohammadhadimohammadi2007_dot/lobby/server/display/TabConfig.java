@@ -147,10 +147,10 @@ public record TabConfig(boolean enabled, int intervalTicks, TieredText header, T
         return null;
     }
 
-    /** Several lines in the file, one text with line breaks. */
+    /** Several lines in the file, one text with line breaks (preserving empty and space-only lines). */
     private static TieredText block(ConfigReader reader, String path, String legacyPath) {
-        String modern = String.join("\n", reader.stringList(path, List.of()));
-        List<String> legacy = reader.stringList(legacyPath, List.of());
+        String modern = String.join("\n", reader.rawStringList(path, List.of()));
+        List<String> legacy = reader.rawStringList(legacyPath, List.of());
         return TieredText.of(modern, legacy.isEmpty() ? null : String.join("\n", legacy));
     }
 

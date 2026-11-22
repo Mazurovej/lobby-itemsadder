@@ -44,6 +44,9 @@ public final class FormattedText {
         if (text.indexOf('&') < 0 && text.indexOf('§') < 0) {
             return text;
         }
+        // When a custom <font:...> tag is used, <reset> would wipe the font back to minecraft:default.
+        // Clearing decorations only matches Minecraft's legacy color-code behavior without dropping the font.
+        String colorReset = text.contains("<font:") ? "<!b><!i><!u><!st><!obf>" : "<reset>";
         StringBuilder out = new StringBuilder(text.length() + 16);
         int i = 0;
         while (i < text.length()) {
@@ -52,12 +55,12 @@ public final class FormattedText {
                 char code = Character.toLowerCase(text.charAt(i + 1));
                 String longHex = longHex(text, i);
                 if (longHex != null) {
-                    out.append("<reset><#").append(longHex).append('>');
+                    out.append(colorReset).append("<#").append(longHex).append('>');
                     i += LONG_HEX_LENGTH;
                     continue;
                 }
                 if (code == '#' && isHex(text, i + 2)) {
-                    out.append("<reset><#").append(text, i + 2, i + 2 + HEX_DIGITS).append('>');
+                    out.append(colorReset).append("<#").append(text, i + 2, i + 2 + HEX_DIGITS).append('>');
                     i += 2 + HEX_DIGITS;
                     continue;
                 }
@@ -69,7 +72,7 @@ public final class FormattedText {
                 String name = CODES.get(code);
                 if (name != null) {
                     boolean color = Character.isDigit(code) || (code >= 'a' && code <= 'f');
-                    out.append(color ? "<reset><" : "<").append(name).append('>');
+                    out.append(color ? colorReset + "<" : "<").append(name).append('>');
                     i += 2;
                     continue;
                 }
