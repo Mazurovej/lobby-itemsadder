@@ -10,7 +10,7 @@ import java.util.Collection;
 import java.util.UUID;
 
 /**
- * Binary wire codec for Simple Voice Chat TCP plugin messages and UDP packets (protocol v18 and v21).
+ * Binary wire codec for Simple Voice Chat TCP plugin messages and UDP packets (protocols v18-v21).
  */
 public final class VoiceChatCodec {
 
@@ -64,7 +64,7 @@ public final class VoiceChatCodec {
 
     public static byte[] encodeSecret(VoiceChatCrypto crypto, UUID playerUuid, IntegrationsConfig.VoiceChat config) {
         Writer w = new Writer();
-        if (crypto.protocolVersion() >= VoiceChatCrypto.PROTOCOL_V21) {
+        if (crypto.usesConnectionId()) {
             w.writeRawBytes(crypto.secretBytes());
             w.writeUuid(crypto.connectionId());
         } else {

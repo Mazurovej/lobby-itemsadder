@@ -11,15 +11,18 @@ import java.util.Arrays;
 import java.util.UUID;
 
 /**
- * Per-connection Simple Voice Chat encryption supporting both:
+ * Per-connection Simple Voice Chat encryption supporting:
  * <ul>
- *   <li>Protocol v21 (Simple Voice Chat 2.6.x): {@code AES/GCM/NoPadding} with 12-byte IV and 128-bit tag</li>
- *   <li>Protocol v18 (Simple Voice Chat 2.5.x): {@code AES/CBC/PKCS5Padding} with 16-byte IV</li>
+ *   <li>Protocol v21 (Simple Voice Chat 2.7.x): {@code AES/GCM/NoPadding} (12-byte IV, 128-bit tag) + separate {@code connectionId}</li>
+ *   <li>Protocol v19-v20 (Simple Voice Chat 2.6.x): {@code AES/GCM/NoPadding} (12-byte IV, 128-bit tag) with v18 packet layouts</li>
+ *   <li>Protocol v18 (Simple Voice Chat 2.5.x): {@code AES/CBC/PKCS5Padding} (16-byte IV)</li>
  * </ul>
  */
 public final class VoiceChatCrypto {
 
     public static final int PROTOCOL_V18 = 18;
+    public static final int PROTOCOL_V19 = 19;
+    public static final int PROTOCOL_V20 = 20;
     public static final int PROTOCOL_V21 = 21;
 
     private static final ThreadLocal<SecureRandom> THREAD_RANDOM = ThreadLocal.withInitial(SecureRandom::new);
@@ -44,7 +47,12 @@ public final class VoiceChatCrypto {
         this.keySpec = new SecretKeySpec(this.secretBytes, "AES");
     }
 
-    /** Creates fresh random credentials for a client using {@code protocolVersion} (18 or 21). */
+    /** True if {@code version} is supported (SVC 2.5.x v18 and SVC 2.6.x v19/v20/v21). */
+    public static boolean isSupportedProtocol(int version) {
+        return version >= PROTOCOL_V18 && version <= PROTOCOL_V21;
+    }
+
+    /** Creates fresh random credentials for a client using {@code protocolVersion} (18-21). */
     public static VoiceChatCrypto generate(int protocolVersion) {
         byte[] secret = new byte[SECRET_BYTES];
         THREAD_RANDOM.get().nextBytes(secret);
@@ -63,7 +71,13 @@ public final class VoiceChatCrypto {
         return protocolVersion;
     }
 
+    /** v19, v20 and v21 use AES-GCM; v18 uses AES-CBC. */
     public boolean isGcm() {
+        return protocolVersion >= PROTOCOL_V19;
+    }
+
+    /** Only v21+ uses a separate connectionId UUID, empty AuthenticatePacket, and bit-packed PlayerState. */
+    public boolean usesConnectionId() {
         return protocolVersion >= PROTOCOL_V21;
     }
 

@@ -33,7 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Built-in Simple Voice Chat server for Minestom supporting both protocol v18 (2.5.x) and v21 (2.6.x).
+ * Built-in Simple Voice Chat server for Minestom supporting protocols v18 (2.5.x), v19-v20 (2.6.x), and v21 (2.7.x).
  *
  * <p>Handles the TCP plugin-message handshake ({@code voicechat:request_secret} &rarr; {@code voicechat:secret}),
  * player voice state synchronization, AES-GCM/AES-CBC encrypted UDP proximity audio routing, per-instance
@@ -69,7 +69,7 @@ public final class VoiceChatServer {
     public static VoiceChatServer start(IntegrationsConfig.VoiceChat config, MuteService mutes) throws IOException {
         DatagramSocket socket = new DatagramSocket(new InetSocketAddress(config.bindAddress(), config.port()));
         socket.setTrafficClass(0x04); // reliability/low-delay hint
-        LOGGER.info("Simple Voice Chat listening on UDP {}:{} (protocols v18/v21, max-distance={})",
+        LOGGER.info("Simple Voice Chat listening on UDP {}:{} (protocols v18-v21, max-distance={})",
                 config.bindAddress(), socket.getLocalPort(), config.maxDistance());
         return new VoiceChatServer(config, mutes, socket);
     }
@@ -122,8 +122,8 @@ public final class VoiceChatServer {
 
     private void handleRequestSecret(Player player, byte[] data) {
         int version = VoiceChatCodec.decodeRequestSecret(data);
-        if (version != VoiceChatCrypto.PROTOCOL_V18 && version != VoiceChatCrypto.PROTOCOL_V21) {
-            LOGGER.debug("Simple Voice Chat: ignoring unsupported client protocol version {} from {}",
+        if (!VoiceChatCrypto.isSupportedProtocol(version)) {
+            LOGGER.warn("Simple Voice Chat: unsupported client protocol v{} from {} (supported: v18-v21)",
                     version, player.getUsername());
             return;
         }
@@ -132,12 +132,14 @@ public final class VoiceChatServer {
         VoiceChatCrypto crypto = VoiceChatCrypto.generate(version);
         Session session = new Session(player, crypto);
         sessionsByPlayer.put(player.getUuid(), session);
-        if (version >= VoiceChatCrypto.PROTOCOL_V21) {
+        if (crypto.usesConnectionId()) {
             sessionsByConnection.put(crypto.connectionId(), session);
         }
 
         byte[] secretPayload = VoiceChatCodec.encodeSecret(crypto, player.getUuid(), config);
         player.sendPluginMessage(VoiceChatCodec.CHANNEL_SECRET, secretPayload);
+        LOGGER.info("Simple Voice Chat: sent secret to {} (protocol v{}, UDP port {})",
+                player.getUsername(), version, config.port());
 
         // Send all known player states to the newly handshaked player.
         List<VoiceChatCodec.PlayerVoiceState> states = new ArrayList<>();
@@ -245,6 +247,8 @@ public final class VoiceChatServer {
         try {
             decrypted = session.crypto.decrypt(envelope.encryptedPayload());
         } catch (GeneralSecurityException e) {
+            LOGGER.debug("Simple Voice Chat: UDP decryption failed for {} (protocol v{}): {}",
+                    session.player.getUsername(), session.crypto.protocolVersion(), e.getMessage());
             return;
         }
         if (decrypted.length == 0) {
@@ -270,14 +274,17 @@ public final class VoiceChatServer {
     }
 
     private void handleAuthenticate(Session session, SocketAddress from, VoiceChatCodec.Reader reader) {
-        if (session.crypto.protocolVersion() < VoiceChatCrypto.PROTOCOL_V21) {
+        if (!session.crypto.usesConnectionId()) {
             try {
                 UUID playerUuid = reader.readUuid();
                 UUID secretUuid = reader.readUuid();
                 if (!playerUuid.equals(session.player.getUuid()) || !secretUuid.equals(session.crypto.secretUuid())) {
+                    LOGGER.warn("Simple Voice Chat: UDP authentication failed for {} (UUID/secret mismatch)",
+                            session.player.getUsername());
                     return;
                 }
             } catch (RuntimeException e) {
+                LOGGER.warn("Simple Voice Chat: malformed UDP authenticate packet from {}", session.player.getUsername());
                 return;
             }
         }
@@ -287,6 +294,8 @@ public final class VoiceChatServer {
         session.lastKeepAliveMillis = System.currentTimeMillis();
         sendUdp(session, VoiceChatCodec.encodeEmptyPacket(VoiceChatCodec.PACKET_AUTHENTICATE_ACK));
         broadcastState(session);
+        LOGGER.info("Simple Voice Chat: {} authenticated over UDP from {} (protocol v{})",
+                session.player.getUsername(), from, session.crypto.protocolVersion());
     }
 
     private void handleConnectionCheck(Session session, SocketAddress from) {
