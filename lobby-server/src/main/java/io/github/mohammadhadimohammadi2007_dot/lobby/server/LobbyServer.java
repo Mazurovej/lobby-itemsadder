@@ -166,6 +166,7 @@ public final class LobbyServer implements ServerInfo {
     private SkinsRestorerReader skinsRestorer;
     private BridgeService bridge;
     private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder;
+    private @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer voiceChat;
     private ChatSystem chat;
     private ActionServices actions;
     private MenuService menus;
@@ -399,6 +400,25 @@ public final class LobbyServer implements ServerInfo {
         integrations.add(itemsAdder.reload(settings.itemsAdder()));
         io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.set(itemsAdder);
         placeholders.textPreprocessor(itemsAdder::replaceGlyphsInTemplate);
+
+        if (!settings.voiceChat().enabled()) {
+            integrations.add(IntegrationStatus.disabled(
+                    io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer.INTEGRATION_NAME));
+        } else {
+            try {
+                voiceChat = io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer.start(
+                        settings.voiceChat(), muteService);
+                integrations.add(IntegrationStatus.active(
+                        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer.INTEGRATION_NAME,
+                        "UDP :" + voiceChat.localPort()));
+            } catch (java.io.IOException e) {
+                LOGGER.error("Simple Voice Chat could not start on UDP {}:{}",
+                        settings.voiceChat().bindAddress(), settings.voiceChat().port(), e);
+                integrations.add(IntegrationStatus.failed(
+                        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer.INTEGRATION_NAME,
+                        e.getMessage()));
+            }
+        }
     }
 
     /** LuckPerms if enabled and included in this build (operators on top); otherwise operators only. */
@@ -607,6 +627,9 @@ public final class LobbyServer implements ServerInfo {
         new SpawnListener(configManager, lobbies::forJoin).register(playerEvents);
         bridge.register(playerEvents);
         itemsAdder.register(playerEvents);
+        if (voiceChat != null) {
+            voiceChat.register(playerEvents);
+        }
         placeholders.register(playerEvents);
         chat.register(playerEvents, MinecraftServer.getCommandManager());
         menus.register(playerEvents);
@@ -778,6 +801,9 @@ public final class LobbyServer implements ServerInfo {
         pvp.shutdown();
         display.shutdown();
         permissions.shutdown();
+        if (voiceChat != null) {
+            voiceChat.shutdown();
+        }
         if (liteBans != null) {
             liteBans.shutdown();
         }

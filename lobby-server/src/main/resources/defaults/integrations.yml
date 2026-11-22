@@ -112,3 +112,31 @@ itemsadder:
     # Permission needed to use ItemsAdder glyphs in chat ("" = everyone who can use chat emojis).
     glyph-permission: ""
 
+# ---------------- Simple Voice Chat ----------------
+# Built-in Simple Voice Chat server (supports both 2.5.x protocol v18 and 2.6.x protocol v21).
+# Open the UDP port below in your firewall so clients can connect.
+voicechat:
+  enabled: false
+  # Address to bind the UDP socket to ("0.0.0.0" = all interfaces).
+  bind-address: "0.0.0.0"
+  # UDP port for voice traffic (default 24454).
+  port: 24454
+  # Optional public host/IP (or "host:port") sent to clients if different from the Minecraft address.
+  # Leave empty to let clients use the same host they connected to Minecraft with.
+  voice-host: ""
+  # Maximum proximity voice distance in blocks (4-256).
+  max-distance: 48.0
+  # Whisper distance in blocks (2-128).
+  whisper-distance: 24.0
+  # Opus codec preset: voip, audio or restricted_lowdelay.
+  codec: "voip"
+  # Maximum UDP packet payload size (256-1024).
+  mtu-size: 1024
+  # Keep-alive interval in milliseconds (1000-10000).
+  keep-alive: 1000
+  # Allow clients to record audio locally.
+  allow-recording: true
+  # Block LiteBans-muted players from speaking.
+  respect-mutes: true
+
+

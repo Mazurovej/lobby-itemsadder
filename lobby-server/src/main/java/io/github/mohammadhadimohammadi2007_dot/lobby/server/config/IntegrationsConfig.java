@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
  * @param signedVelocity SignedVelocity sync settings
  * @param mineSkin      MineSkin settings
  * @param itemsAdder    ItemsAdder settings
+ * @param voiceChat     Simple Voice Chat settings
  */
 public record IntegrationsConfig(
         Database database,
@@ -23,7 +24,8 @@ public record IntegrationsConfig(
         Bridge bridge,
         SignedVelocity signedVelocity,
         MineSkin mineSkin,
-        ItemsAdder itemsAdder
+        ItemsAdder itemsAdder,
+        VoiceChat voiceChat
 ) {
 
     private static final int MAX_PORT = 65535;
@@ -107,6 +109,33 @@ public record IntegrationsConfig(
         }
     }
 
+    /** {@code voicechat:} section (Simple Voice Chat server). */
+    public record VoiceChat(
+            boolean enabled,
+            String bindAddress,
+            int port,
+            String voiceHost,
+            double maxDistance,
+            double whisperDistance,
+            String codec,
+            int mtuSize,
+            int keepAliveMillis,
+            boolean allowRecording,
+            boolean respectMutes
+    ) {
+        public static final VoiceChat DISABLED = new VoiceChat(
+                false, "0.0.0.0", 24454, "", 48.0, 24.0, "voip", 1024, 1000, true, true);
+
+        /** Simple Voice Chat codec ordinal: 0 = VOIP, 1 = AUDIO, 2 = RESTRICTED_LOWDELAY. */
+        public byte codecOrdinal() {
+            return switch (codec) {
+                case "audio" -> 1;
+                case "restricted_lowdelay" -> 2;
+                default -> 0;
+            };
+        }
+    }
+
     private static final Pattern SHA1_HEX = Pattern.compile("[0-9a-fA-F]{40}");
 
     /** True if any enabled integration needs the shared database pool. */
@@ -144,8 +173,32 @@ public record IntegrationsConfig(
         SignedVelocity signedVelocity = new SignedVelocity(reader.bool("signedvelocity.enabled"));
         MineSkin mineSkin = new MineSkin(reader.string("mineskin.api-key", "").strip());
         ItemsAdder itemsAdder = readItemsAdder(reader);
+        VoiceChat voiceChat = readVoiceChat(reader);
         return new IntegrationsConfig(database, luckPerms, liteBans, skinsRestorer, bridge, signedVelocity, mineSkin,
-                itemsAdder);
+                itemsAdder, voiceChat);
+    }
+
+    private static VoiceChat readVoiceChat(ConfigReader reader) {
+        boolean enabled = reader.bool("voicechat.enabled", false);
+        String bindAddress = reader.string("voicechat.bind-address", "0.0.0.0").strip();
+        if (bindAddress.isEmpty()) {
+            bindAddress = "0.0.0.0";
+        }
+        int port = reader.integer("voicechat.port", 1, MAX_PORT, 24454);
+        String voiceHost = reader.string("voicechat.voice-host", "").strip();
+        double maxDistance = reader.decimal("voicechat.max-distance", 4.0, 256.0, 48.0);
+        double whisperDistance = reader.decimal("voicechat.whisper-distance", 2.0, 128.0, 24.0);
+        String codec = reader.string("voicechat.codec", "voip").strip().toLowerCase(java.util.Locale.ROOT);
+        if (!Set.of("voip", "audio", "restricted_lowdelay").contains(codec)) {
+            reader.reportInvalid("voicechat.codec", codec, "voip, audio or restricted_lowdelay");
+            codec = "voip";
+        }
+        int mtuSize = reader.integer("voicechat.mtu-size", 256, 1024, 1024);
+        int keepAlive = reader.integer("voicechat.keep-alive", 1000, 10_000, 1000);
+        boolean allowRecording = reader.bool("voicechat.allow-recording", true);
+        boolean respectMutes = reader.bool("voicechat.respect-mutes", true);
+        return new VoiceChat(enabled, bindAddress, port, voiceHost, maxDistance, whisperDistance, codec,
+                mtuSize, keepAlive, allowRecording, respectMutes);
     }
 
     private static ItemsAdder readItemsAdder(ConfigReader reader) {

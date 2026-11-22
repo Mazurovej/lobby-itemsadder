@@ -47,7 +47,8 @@ public final class RestartRequired {
                 || !Objects.equals(ia.skinsRestorer(), ib.skinsRestorer())
                 || !Objects.equals(ia.bridge(), ib.bridge())
                 || !Objects.equals(ia.signedVelocity(), ib.signedVelocity())
-                || !Objects.equals(ia.mineSkin(), ib.mineSkin())) {
+                || !Objects.equals(ia.mineSkin(), ib.mineSkin())
+                || !Objects.equals(ia.voiceChat(), ib.voiceChat())) {
             changed.add("integrations.yml");
         }
         // Chat storage (tables, log files) is opened once at startup; everything else in chat.yml reloads.
