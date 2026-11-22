@@ -80,11 +80,32 @@ tab:
 # ---------------- Nametags (above players' heads) ----------------
 nametags:
   enabled: true
+  # "unlimited" uses a TextDisplay entity mounted on each player (1.19.4+), supporting full RGB hex
+  # colours, gradients, ItemsAdder glyphs and multiple lines, with automatic fallback to classic teams
+  # for older clients (< 1.19.4). "vanilla" uses classic scoreboard teams only (16 colours).
+  mode: unlimited
   prefix: "%luckperms_prefix%"
   suffix: "%luckperms_suffix%"
-  # The colour of the name itself: "auto" takes the last colour of the prefix, or one of Minecraft's
-  # 16 colours (white, gray, gold, red, ...).
+  # The colour of the name itself: "auto" takes the last colour of the prefix (including hex #RRGGBB
+  # in unlimited mode), a hex colour like "#74b9ff", or one of Minecraft's 16 colours (white, gray,
+  # gold, red, ...).
   name-color: auto
+  # Unlimited nametag settings (mode: unlimited, 1.19.4+ clients):
+  # Optional multi-line format; leave empty to show prefix + coloured player name + suffix on one line.
+  # You can use <name> for the coloured player name, plus any %placeholder% and ItemsAdder :glyph:.
+  lines: []
+  # Vertical offset above the player's head, in blocks.
+  y-offset: 0.25
+  # Text scale (1.0 = normal nametag size).
+  scale: 1.0
+  # Background colour: "default" (Minecraft's translucent black), "transparent", or "#RRGGBB" / "#AARRGGBB".
+  background: default
+  # Draw a drop shadow behind the text.
+  text-shadow: false
+  # Show through blocks when the player is not sneaking (like vanilla nametags).
+  see-through: true
+  # Maximum distance in blocks at which other players see the nametag.
+  view-distance: 48
 
 # ---------------- Boss bar ----------------
 bossbar:

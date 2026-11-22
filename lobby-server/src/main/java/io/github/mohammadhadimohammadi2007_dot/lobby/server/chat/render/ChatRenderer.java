@@ -58,13 +58,19 @@ public final class ChatRenderer {
     public RenderedMessage prepare(ChatMessage message, boolean styling, boolean emojis) {
         ChatConfig chat = config.get();
         PlayerMeta meta = message.senderMeta();
-        Component prefix = FormattedText.parse(meta.prefix());
-        Component suffix = FormattedText.parse(meta.suffix());
-        return new RenderedMessage(key -> render(message, chat, key, styling, emojis, prefix, suffix));
+        var ia = itemsAdder;
+        String rawPrefix = ia != null ? ia.replaceGlyphsInTemplate(meta.prefix()) : meta.prefix();
+        String rawSuffix = ia != null ? ia.replaceGlyphsInTemplate(meta.suffix()) : meta.suffix();
+        Component prefix = FormattedText.parse(rawPrefix);
+        Component suffix = FormattedText.parse(rawSuffix);
+        net.kyori.adventure.text.format.TextColor nameColor =
+                io.github.mohammadhadimohammadi2007_dot.lobby.server.placeholder.ComponentColors.lastColor(meta.prefix(), prefix);
+        return new RenderedMessage(key -> render(message, chat, key, styling, emojis, prefix, suffix, nameColor));
     }
 
     private Component render(ChatMessage message, ChatConfig chat, VariantKey key, boolean styling, boolean emojis,
-                             Component prefix, Component suffix) {
+                             Component prefix, Component suffix,
+                             @Nullable net.kyori.adventure.text.format.TextColor nameColor) {
         ChatConfig.Format format = message.format();
         Component body = body(message, chat, key, styling, emojis);
         Component coloredBody = format.messageColor().isBlank()
@@ -73,7 +79,7 @@ public final class ChatRenderer {
                 Placeholder.component("lobby_message_body", body));
 
         TagResolver tags = TagResolver.resolver(
-                Placeholder.component("name", nameComponent(message, format, key)),
+                Placeholder.component("name", nameComponent(message, format, key, nameColor)),
                 Placeholder.component("message", coloredBody),
                 Placeholder.component("prefix", prefix),
                 Placeholder.component("suffix", suffix));
@@ -112,9 +118,12 @@ public final class ChatRenderer {
         return body;
     }
 
-    /** The sender's name with hover lines and click action from the format. */
-    private Component nameComponent(ChatMessage message, ChatConfig.Format format, VariantKey key) {
-        Component name = Component.text(message.senderName());
+    /** The sender's name with hover lines, click action, and the last color from their LuckPerms prefix. */
+    private Component nameComponent(ChatMessage message, ChatConfig.Format format, VariantKey key,
+                                    @Nullable net.kyori.adventure.text.format.TextColor nameColor) {
+        Component name = nameColor != null
+                ? Component.text(message.senderName(), nameColor)
+                : Component.text(message.senderName());
         List<Component> lines = new ArrayList<>();
         for (String line : format.hover()) {
             if (!line.isBlank()) {

@@ -64,8 +64,10 @@ final class PlayerTeams {
                     : text.about(nametags.prefix().legacy(), player, true);
             Component legacySuffix = nametags.suffix().legacy() == null ? null
                     : text.about(nametags.suffix().legacy(), player, true);
-            TeamColor color = nametags.nameColor() != null ? nametags.nameColor() : lastColor(prefix);
-            teams.setPlayer(player, order, prefix, suffix, legacyPrefix, legacySuffix, color);
+            TeamColor color = nametags.nameColor() != null
+                    ? nametags.nameColor()
+                    : lastColor(permissions.meta(player).prefix(), prefix);
+            teams.setPlayer(player, order, prefix, suffix, legacyPrefix, legacySuffix, color, nametags.unlimited());
         }
     }
 
@@ -83,25 +85,18 @@ final class PlayerTeams {
 
     /** The colour the prefix ends in, as one of the 16 team colours; white if it has none. */
     static TeamColor lastColor(Component prefix) {
-        TextColor last = last(prefix, null);
+        return lastColor(null, prefix);
+    }
+
+    /** The colour the prefix ends in (checking raw trailing codes too), as one of the 16 team colours. */
+    static TeamColor lastColor(@Nullable String rawPrefix, Component prefix) {
+        TextColor last = io.github.mohammadhadimohammadi2007_dot.lobby.server.placeholder.ComponentColors.lastColor(
+                rawPrefix, prefix);
         if (last == null) {
             return TeamColor.WHITE;
         }
         NamedTextColor named = last instanceof NamedTextColor exact ? exact : NamedTextColor.nearestTo(last);
         TeamColor color = TabConfig.teamColor(NamedTextColor.NAMES.key(named));
         return color == null ? TeamColor.WHITE : color;
-    }
-
-    /** The colour of the last piece of text that has one, following inherited colours. */
-    private static @Nullable TextColor last(Component component, @Nullable TextColor inherited) {
-        TextColor own = component.color() != null ? component.color() : inherited;
-        TextColor result = component instanceof TextComponent text && !text.content().isBlank() ? own : null;
-        for (Component child : component.children()) {
-            TextColor found = last(child, own);
-            if (found != null) {
-                result = found;
-            }
-        }
-        return result;
     }
 }

@@ -58,31 +58,47 @@ public final class TeamManager {
     private static final char CLASH_MARK = '~';
     private static final byte NO_FRIENDLY_FLAGS = 0;
 
+    /** Client capability tier for scoreboard teams. */
+    private enum ViewerKind {
+        /** 1.8–1.12: 16-character prefix/suffix limit, no TextDisplay. */
+        LEGACY_1_12,
+        /** 1.13–1.19.3: full prefix/suffix, no TextDisplay (keeps vanilla nametag). */
+        MODERN_CLASSIC,
+        /** 1.19.4+: full prefix/suffix and TextDisplay support (can hide vanilla nametag for UnlimitedNameTags). */
+        DISPLAY_1_19_4
+    }
+
     /**
      * One team as all clients know it.
      *
-     * @param legacyPrefix the prefix for 1.8-1.12 clients, or {@code null} to shorten {@link #prefix}
+     * @param legacyPrefix          the prefix for 1.8-1.12 clients, or {@code null} to shorten {@link #prefix}
+     * @param hideForDisplayClients true to send {@link NameTagVisibility#NEVER} to 1.19.4+ clients (UnlimitedNameTags)
      */
     private record Team(String name, Component prefix, Component suffix, TeamColor color,
                         NameTagVisibility nameTag, CollisionRule collision, Set<String> members,
-                        @Nullable Component legacyPrefix, @Nullable Component legacySuffix) {
+                        @Nullable Component legacyPrefix, @Nullable Component legacySuffix,
+                        boolean hideForDisplayClients) {
 
         Team(String name, Component prefix, Component suffix, TeamColor color, NameTagVisibility nameTag,
              CollisionRule collision, Set<String> members) {
-            this(name, prefix, suffix, color, nameTag, collision, members, null, null);
+            this(name, prefix, suffix, color, nameTag, collision, members, null, null, false);
         }
 
-        TeamsPacket.Settings settings(boolean legacy) {
+        TeamsPacket.Settings settings(ViewerKind kind) {
+            boolean legacy = kind == ViewerKind.LEGACY_1_12;
             Component shortPrefix = legacy ? LegacyText.limit(legacyPrefix != null ? legacyPrefix : prefix, LEGACY_LIMIT)
                     : prefix;
             Component shortSuffix = legacy ? LegacyText.limit(legacySuffix != null ? legacySuffix : suffix, LEGACY_LIMIT)
                     : suffix;
-            return new TeamsPacket.Settings(Component.empty(), shortPrefix, shortSuffix, nameTag, collision, color,
+            NameTagVisibility visibility = hideForDisplayClients && kind == ViewerKind.DISPLAY_1_19_4
+                    ? NameTagVisibility.NEVER
+                    : nameTag;
+            return new TeamsPacket.Settings(Component.empty(), shortPrefix, shortSuffix, visibility, collision, color,
                     NO_FRIENDLY_FLAGS);
         }
 
-        TeamsPacket create(boolean legacy) {
-            return new TeamsPacket(name, new TeamsPacket.CreateTeamAction(settings(legacy), List.copyOf(members)));
+        TeamsPacket create(ViewerKind kind) {
+            return new TeamsPacket(name, new TeamsPacket.CreateTeamAction(settings(kind), List.copyOf(members)));
         }
     }
 
@@ -121,19 +137,29 @@ public final class TeamManager {
      * prefix, suffix and name color. Only what changed is sent.
      */
     public void setPlayer(Player player, int order, Component prefix, Component suffix, TeamColor color) {
-        setPlayer(player, order, prefix, suffix, null, null, color);
+        setPlayer(player, order, prefix, suffix, null, null, color, false);
     }
 
     /**
      * Like {@link #setPlayer(Player, int, Component, Component, TeamColor)}, with other versions of the
      * prefix and suffix for 1.8-1.12 clients ({@code null} to shorten the normal ones).
      */
+    public void setPlayer(Player player, int order, Component prefix, Component suffix,
+                          @Nullable Component legacyPrefix, @Nullable Component legacySuffix,
+                          TeamColor color) {
+        setPlayer(player, order, prefix, suffix, legacyPrefix, legacySuffix, color, false);
+    }
+
+    /**
+     * Like {@link #setPlayer(Player, int, Component, Component, Component, Component, TeamColor)}, optionally
+     * hiding the vanilla nametag on 1.19.4+ clients when UnlimitedNameTags renders a TextDisplay instead.
+     */
     public synchronized void setPlayer(Player player, int order, Component prefix, Component suffix,
                                        @Nullable Component legacyPrefix, @Nullable Component legacySuffix,
-                                       TeamColor color) {
+                                       TeamColor color, boolean hideForDisplayClients) {
         String name = playerTeamName(player, Math.clamp(order, 0, MAX_ORDER));
         Team wanted = new Team(name, prefix, suffix, color, NameTagVisibility.ALWAYS, playerCollision,
-                Set.of(player.getUsername()), legacyPrefix, legacySuffix);
+                Set.of(player.getUsername()), legacyPrefix, legacySuffix, hideForDisplayClients);
         String current = playerTeams.get(player.getUuid());
         if (current != null && current.equals(name)) {
             Team old = teams.get(name);
@@ -141,13 +167,13 @@ public final class TeamManager {
                 return;
             }
             teams.put(name, wanted);
-            broadcast(legacy -> new TeamsPacket(name, new TeamsPacket.UpdateTeamAction(wanted.settings(legacy))));
+            broadcast(kind -> new TeamsPacket(name, new TeamsPacket.UpdateTeamAction(wanted.settings(kind))));
             return;
         }
         if (current != null) {
             // The order is part of the name (tab sorts by team name), so a new order needs a new team.
             teams.remove(current);
-            broadcast(legacy -> new TeamsPacket(current, new TeamsPacket.RemoveTeamAction()));
+            broadcast(kind -> new TeamsPacket(current, new TeamsPacket.RemoveTeamAction()));
         }
         teams.put(name, wanted);
         playerTeams.put(player.getUuid(), name);
@@ -225,11 +251,11 @@ public final class TeamManager {
      */
     public void sendPrivate(Player viewer, String id, boolean create, Component prefix, Component suffix, String entry) {
         String name = privateName(id);
-        boolean legacy = isLegacy(viewer);
+        ViewerKind kind = viewerKind(viewer);
         Team team = new Team(name, prefix, suffix, TeamColor.WHITE, NameTagVisibility.ALWAYS, CollisionRule.NEVER,
                 Set.of(entry));
-        viewer.sendPacket(create ? team.create(legacy)
-                : new TeamsPacket(name, new TeamsPacket.UpdateTeamAction(team.settings(legacy))));
+        viewer.sendPacket(create ? team.create(kind)
+                : new TeamsPacket(name, new TeamsPacket.UpdateTeamAction(team.settings(kind))));
     }
 
     /** Removes a team created with {@link #sendPrivate}. */
@@ -242,11 +268,19 @@ public final class TeamManager {
         return protocolOf.applyAsInt(viewer) < ProtocolVersions.V1_13;
     }
 
+    private ViewerKind viewerKind(Player viewer) {
+        int protocol = protocolOf.applyAsInt(viewer);
+        if (protocol < ProtocolVersions.V1_13) {
+            return ViewerKind.LEGACY_1_12;
+        }
+        return protocol >= ProtocolVersions.V1_19_4 ? ViewerKind.DISPLAY_1_19_4 : ViewerKind.MODERN_CLASSIC;
+    }
+
     /** Sends every shared team to one player. */
     public synchronized void sendAllTo(Player viewer) {
-        boolean legacy = isLegacy(viewer);
+        ViewerKind kind = viewerKind(viewer);
         for (Team team : teams.values()) {
-            viewer.sendPacket(team.create(legacy));
+            viewer.sendPacket(team.create(kind));
         }
     }
 
@@ -286,19 +320,27 @@ public final class TeamManager {
         return PRIVATE_PREFIX + id;
     }
 
-    /** Sends a packet to every online player, built once for new clients and once for old ones. */
-    private void broadcast(Function<Boolean, ServerPacket> packet) {
+    /** Sends a packet to every online player, built once per client tier. */
+    private void broadcast(Function<ViewerKind, ServerPacket> packet) {
         Collection<Player> online = MinecraftServer.getConnectionManager().getOnlinePlayers();
-        List<Player> modern = new ArrayList<>(online.size());
+        List<Player> display = new ArrayList<>(online.size());
+        List<Player> modernClassic = new ArrayList<>();
         List<Player> legacy = new ArrayList<>();
         for (Player player : online) {
-            (isLegacy(player) ? legacy : modern).add(player);
+            switch (viewerKind(player)) {
+                case DISPLAY_1_19_4 -> display.add(player);
+                case MODERN_CLASSIC -> modernClassic.add(player);
+                case LEGACY_1_12 -> legacy.add(player);
+            }
         }
-        if (!modern.isEmpty()) {
-            PacketSendingUtils.sendGroupedPacket(modern, packet.apply(false));
+        if (!display.isEmpty()) {
+            PacketSendingUtils.sendGroupedPacket(display, packet.apply(ViewerKind.DISPLAY_1_19_4));
+        }
+        if (!modernClassic.isEmpty()) {
+            PacketSendingUtils.sendGroupedPacket(modernClassic, packet.apply(ViewerKind.MODERN_CLASSIC));
         }
         if (!legacy.isEmpty()) {
-            PacketSendingUtils.sendGroupedPacket(legacy, packet.apply(true));
+            PacketSendingUtils.sendGroupedPacket(legacy, packet.apply(ViewerKind.LEGACY_1_12));
         }
     }
 }

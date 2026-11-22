@@ -48,6 +48,7 @@ public final class DisplayService {
     private final SidebarService sidebar;
     private final TabListService tab;
     private final PlayerTeams playerTeams;
+    private final UnlimitedNameTags unlimitedNameTags;
     private final BarsService bars;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicInteger skipped = new AtomicInteger();
@@ -69,6 +70,7 @@ public final class DisplayService {
         this.tab = new TabListService(tiers, text, (viewer, target) -> Vanished.is(target)
                 && !permissions.hasPermission(viewer, Permissions.VANISH_SEE));
         this.playerTeams = new PlayerTeams(teams, permissions);
+        this.unlimitedNameTags = new UnlimitedNameTags(text, permissions, protocolOf);
         this.bars = new BarsService(permissions);
         this.applied = config.current().display();
     }
@@ -125,6 +127,7 @@ public final class DisplayService {
             tab.refresh(tabConfig, online, text);
             playerTeams.refresh(tabConfig, online, text);
         }
+        unlimitedNameTags.refresh(tabConfig.nametags(), online, text);
         bars.refresh(current.bars(), online, text, first ? -1 : previous, now);
     }
 
@@ -136,6 +139,9 @@ public final class DisplayService {
         if (!next.tab().enabled()) {
             tab.reset(online);
         }
+        if (!next.tab().nametags().enabled() || !next.tab().nametags().unlimited()) {
+            unlimitedNameTags.hideAll(online);
+        }
         if (!next.bars().bossBar().enabled()) {
             bars.hideAll(online);
         }
@@ -146,6 +152,7 @@ public final class DisplayService {
     private void forget(UUID player) {
         sidebar.forget(player);
         tab.forget(player);
+        unlimitedNameTags.forget(player, MinecraftServer.getConnectionManager().getOnlinePlayers());
         bars.forget(player);
     }
 
