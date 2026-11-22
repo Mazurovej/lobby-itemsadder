@@ -1,0 +1,55 @@
+# Manually triggered workflow to build lobby-server.jar and lobby-bridge.jar on demand.
+name: Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run unit tests during the build"
+        type: boolean
+        default: false
+      version:
+        description: "Optional version string (e.g. 0.2.0-itemsadder); leave empty for default snapshot"
+        type: string
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The LuckPerms Minestom port is built from the submodule in third_party/luckperms.
+          submodules: true
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build jars
+        env:
+          LOBBY_VERSION: ${{ inputs.version }}
+          RUN_TESTS: ${{ inputs.run_tests }}
+        run: |
+          ARGS=""
+          if [ -n "$LOBBY_VERSION" ]; then
+            ARGS="$ARGS -PlobbyVersion=$LOBBY_VERSION"
+          fi
+          if [ "$RUN_TESTS" = "true" ]; then
+            ./gradlew build $ARGS
+          else
+            ./gradlew build -x test $ARGS
+          fi
+
+      - name: Upload jars
+        uses: actions/upload-artifact@v4
+        with:
+          name: lobby-jars
+          path: |
+            lobby-server/build/libs/lobby-server.jar
+            lobby-bridge-velocity/build/libs/lobby-bridge.jar
+            examples/addon-example/build/libs/example-addon.jar
+          if-no-files-found: error
