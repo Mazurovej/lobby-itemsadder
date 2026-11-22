@@ -140,13 +140,13 @@ public record HotbarConfig(boolean enabled, boolean clearInventory, List<Item> i
                 actions, modeLooks, false);
     }
 
-    /** {@code material}, {@code amount}, {@code name}, {@code lore} and {@code glow} at {@code path}. */
+    /** {@code material} (or {@code itemsadder:ns:id}), {@code amount}, {@code name}, {@code lore} and {@code glow}. */
     private static @Nullable MenuItem look(ConfigReader reader, String path, int slot) {
-        Material material = MenuConfig.material(reader, path + ".material", reader.string(path + ".material", "stone"));
-        if (material == null) {
+        var item = MenuConfig.itemSpecWithOverrides(reader, path, "stone");
+        if (item == null) {
             return null;
         }
-        return new MenuItem(List.of(slot), material, reader.integer(path + ".amount", 1, MAX_AMOUNT, 1),
+        return new MenuItem(List.of(slot), item, reader.integer(path + ".amount", 1, MAX_AMOUNT, 1),
                 reader.string(path + ".name", ""), reader.stringList(path + ".lore", List.of()),
                 reader.bool(path + ".glow", false), List.of(), ActionList.EMPTY);
     }

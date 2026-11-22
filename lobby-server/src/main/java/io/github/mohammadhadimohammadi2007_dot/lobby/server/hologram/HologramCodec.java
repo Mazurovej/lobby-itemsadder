@@ -77,8 +77,8 @@ public final class HologramCodec implements DataCodec<HologramData> {
             position.node("yaw").set(data.position().yaw());
             position.node("pitch").set(data.position().pitch());
         }
-        if (data.item() != null) {
-            node.node("item").set(data.item().key().value());
+        if (data.itemSpec() != null) {
+            node.node("item").set(data.itemSpec().serialize());
         }
         if (data.block() != null) {
             node.node("block").set(data.block().key().value());
@@ -183,12 +183,12 @@ public final class HologramCodec implements DataCodec<HologramData> {
         String itemName = node.node("item").getString("");
         String blockName = node.node("block").getString("");
         if (!itemName.isBlank()) {
-            data.item(material(itemName));
+            data.itemSpec(itemSpec(itemName));
         }
         if (!blockName.isBlank()) {
             data.block(block(blockName));
         }
-        if (type == HologramType.ITEM && data.item() == null) {
+        if (type == HologramType.ITEM && data.itemSpec() == null) {
             throw new DataException("an item hologram needs 'item', for example \"item: diamond\"");
         }
         if (type == HologramType.BLOCK && data.block() == null) {
@@ -224,12 +224,13 @@ public final class HologramCodec implements DataCodec<HologramData> {
                         warning -> LOGGER.warn("{}", warning)));
     }
 
-    private static Material material(String value) throws DataException {
-        Material material = Material.fromKey(key(value));
-        if (material == null) {
+    private static io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec itemSpec(String value)
+            throws DataException {
+        var spec = io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.parse(value);
+        if (spec == null) {
             throw new DataException("'item': there is no item called '" + value + "'");
         }
-        return material;
+        return spec;
     }
 
     private static Block block(String value) throws DataException {

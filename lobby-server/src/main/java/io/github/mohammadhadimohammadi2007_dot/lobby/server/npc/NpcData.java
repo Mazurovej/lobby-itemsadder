@@ -56,7 +56,7 @@ public final class NpcData {
     private volatile double scale = 1;
     private volatile NpcPose pose = NpcPose.STANDING;
     private volatile boolean showInTab;
-    private volatile Map<EquipmentSlot, Material> equipment = Map.of();
+    private volatile Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> equipmentSpecs = Map.of();
     private volatile double viewDistance = DEFAULT_VIEW_DISTANCE;
     private volatile String permission = "";
     private volatile Map<NpcTrigger, Actions> actions = Map.of();
@@ -225,21 +225,37 @@ public final class NpcData {
         return isPlayer() ? profileName : profileId.toString();
     }
 
-    /** What the NPC holds and wears. */
+    /** What the NPC holds and wears (base materials). */
     public Map<EquipmentSlot, Material> equipment() {
-        return equipment;
+        Map<EquipmentSlot, Material> out = new EnumMap<>(EquipmentSlot.class);
+        equipmentSpecs.forEach((slot, spec) -> out.put(slot, spec.material()));
+        return Map.copyOf(out);
+    }
+
+    /** What the NPC holds and wears (including ItemsAdder custom items). */
+    public Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> equipmentSpecs() {
+        return equipmentSpecs;
     }
 
     /** Puts an item in one slot, or empties it with {@code null}. */
     public void equipment(EquipmentSlot slot, @Nullable Material material) {
-        Map<EquipmentSlot, Material> updated = new EnumMap<>(EquipmentSlot.class);
-        updated.putAll(equipment);
-        if (material == null || material == Material.AIR) {
+        equipmentSpec(slot, material == null || material == Material.AIR
+                ? null
+                : io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.of(material));
+    }
+
+    /** Puts a vanilla or ItemsAdder item in one slot, or empties it with {@code null}. */
+    public void equipmentSpec(EquipmentSlot slot,
+                              @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec spec) {
+        Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> updated =
+                new EnumMap<>(EquipmentSlot.class);
+        updated.putAll(equipmentSpecs);
+        if (spec == null || (!spec.isItemsAdder() && spec.material() == Material.AIR)) {
             updated.remove(slot);
         } else {
-            updated.put(slot, material);
+            updated.put(slot, spec);
         }
-        equipment = Map.copyOf(updated);
+        equipmentSpecs = Map.copyOf(updated);
     }
 
     public double viewDistance() {
@@ -327,7 +343,7 @@ public final class NpcData {
         copy.glowColor = glowColor;
         copy.scale = scale;
         copy.showInTab = showInTab;
-        copy.equipment = equipment;
+        copy.equipmentSpecs = equipmentSpecs;
         copy.viewDistance = viewDistance;
         copy.permission = permission;
         copy.clickCooldownMillis = clickCooldownMillis;

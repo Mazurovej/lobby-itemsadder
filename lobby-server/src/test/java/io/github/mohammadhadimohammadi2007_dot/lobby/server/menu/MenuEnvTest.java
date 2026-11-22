@@ -107,7 +107,7 @@ class MenuEnvTest {
         assertEquals(3, lobby.rows());
         assertEquals(27, lobby.size());
         assertEquals(20, lobby.refreshTicks());
-        assertEquals(Material.GRAY_STAINED_GLASS_PANE, lobby.fill());
+        assertEquals(Material.GRAY_STAINED_GLASS_PANE, lobby.fill().material());
         assertEquals(4, lobby.items().size());
         assertNull(snapshot.menus().menu("nothing"));
     }

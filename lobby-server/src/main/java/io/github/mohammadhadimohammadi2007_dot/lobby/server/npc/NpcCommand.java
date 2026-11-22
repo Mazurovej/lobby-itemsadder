@@ -440,21 +440,22 @@ public final class NpcCommand extends Command {
             }
             EquipmentSlot equipmentSlot = NpcCodec.slot(context.get(slot));
             String itemName = context.get(item).toLowerCase(Locale.ROOT);
-            Material material = itemName.equals("air") || itemName.equals("none") ? Material.AIR
-                    : Material.fromKey(itemName.contains(":") ? itemName : "minecraft:" + itemName);
-            if (equipmentSlot == null || material == null) {
+            var spec = itemName.equals("air") || itemName.equals("none")
+                    ? io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.of(Material.AIR)
+                    : io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.parse(itemName);
+            if (equipmentSlot == null || spec == null) {
                 support.invalid(sender, "equipment", "unknown slot or item", "main_hand, off_hand, helmet,"
-                        + " chestplate, leggings or boots, and an item name");
+                        + " chestplate, leggings or boots, and an item name or itemsadder:namespace:id");
                 return;
             }
-            data.equipment(equipmentSlot, material);
-            support.changed(sender, data, "equipment " + NpcCodec.slotName(equipmentSlot), material.key().value());
+            data.equipmentSpec(equipmentSlot, spec);
+            support.changed(sender, data, "equipment " + NpcCodec.slotName(equipmentSlot), spec.serialize());
         }, npc, set, slot, item);
         command.addSyntax((sender, context) -> {
             NpcData data = support.found(sender, context.get(npc));
             if (data != null) {
-                String items = data.equipment().isEmpty() ? "nothing" : data.equipment().entrySet().stream()
-                        .map(entry -> NpcCodec.slotName(entry.getKey()) + ": " + entry.getValue().key().value())
+                String items = data.equipmentSpecs().isEmpty() ? "nothing" : data.equipmentSpecs().entrySet().stream()
+                        .map(entry -> NpcCodec.slotName(entry.getKey()) + ": " + entry.getValue().serialize())
                         .collect(Collectors.joining(", "));
                 sender.sendMessage(support.text.message(MessageKey.NPC_EQUIPMENT_LIST, sender,
                         Messages.text("name", data.name()), Messages.text("items", items)));
@@ -463,8 +464,8 @@ public final class NpcCommand extends Command {
         command.addSyntax((sender, context) -> {
             NpcData data = support.found(sender, context.get(npc));
             if (data != null) {
-                for (Map.Entry<EquipmentSlot, Material> entry : data.equipment().entrySet()) {
-                    data.equipment(entry.getKey(), null);
+                for (EquipmentSlot equipmentSlot : data.equipmentSpecs().keySet()) {
+                    data.equipmentSpec(equipmentSlot, null);
                 }
                 support.changed(sender, data, "equipment", "nothing");
             }

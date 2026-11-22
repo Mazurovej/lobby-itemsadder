@@ -1,7 +1,7 @@
 package io.github.mohammadhadimohammadi2007_dot.lobby.server.menu;
 
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec;
 import net.minestom.server.inventory.InventoryType;
-import net.minestom.server.item.Material;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -11,10 +11,10 @@ import java.util.List;
  *
  * @param rows           1-6 rows of nine slots
  * @param refreshTicks   how often the items are rebuilt while open (0 = never)
- * @param fill           material put in every empty slot, or {@code null} for none
+ * @param fill           item put in every empty slot, or {@code null} for none
  * @param items          the items, in file order
  */
-public record MenuDefinition(String name, String title, int rows, int refreshTicks, @Nullable Material fill,
+public record MenuDefinition(String name, String title, int rows, int refreshTicks, @Nullable ItemSpec fill,
                              List<MenuItem> items) {
 
     public static final int SLOTS_PER_ROW = 9;

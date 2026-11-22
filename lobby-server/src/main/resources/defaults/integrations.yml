@@ -76,3 +76,39 @@ signedvelocity:
 # Only works when mode is "velocity" or "bungeecord" in config.yml.
 bridge:
   enabled: false
+
+# ---------------- ItemsAdder ----------------
+# Loads custom items and font images (glyphs, emojis, custom GUI textures, offsets) from an
+# ItemsAdder folder (contents/ + storage/ cache files) and/or a generated resource pack (.zip),
+# and sends the resource pack to players on join.
+# Changes in this section apply live with /setup-lobby reload.
+# Guide: docs/integrations/itemsadder.md
+itemsadder:
+  enabled: false
+  # Path to a copied ItemsAdder folder (containing contents/ and/or storage/), relative to the
+  # server folder or absolute. Leave empty to only read pack-zip.
+  data-path: "itemsadder"
+  # Optional path to a generated ItemsAdder resource pack (.zip), relative to the server folder or
+  # absolute. If left empty and <data-path>/output/generated.zip exists, it is read automatically.
+  pack-zip: ""
+  resource-pack:
+    # Public HTTP/HTTPS URL of your hosted ItemsAdder resource pack (CDN or web server).
+    # Leave empty if your proxy already sends the resource pack.
+    url: ""
+    # Optional 40-character SHA-1 hex hash of the pack zip.
+    # Leave empty to auto-compute from pack-zip (if present), or skip hash checking.
+    hash: ""
+    # True to require the pack (players who decline or fail download are kicked).
+    required: false
+    # Message shown on the client's resource-pack prompt (MiniMessage). Leave empty for no prompt.
+    prompt: "<gold>This server uses a custom resource pack."
+    # Kick message when required is true and the player declines or download fails.
+    kick-message: "<red>You must accept the server resource pack to play here."
+    # Clear previously applied resource packs before applying this one.
+    replace: false
+  chat:
+    # Replace :glyph: and :namespace:glyph: shortcodes in player chat messages.
+    replace-glyphs: true
+    # Permission needed to use ItemsAdder glyphs in chat ("" = everyone who can use chat emojis).
+    glyph-permission: ""
+

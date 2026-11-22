@@ -1,5 +1,7 @@
 package io.github.mohammadhadimohammadi2007_dot.lobby.server.cosmetic;
 
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver;
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec;
 import net.kyori.adventure.util.RGBLike;
 import net.minestom.server.component.DataComponents;
 import net.minestom.server.entity.EntityType;
@@ -23,13 +25,13 @@ import java.util.Map;
  * @param id          its name in the file, lower case; with the type, what is saved for players
  * @param name        shown in the menu and in messages, MiniMessage
  * @param lore        lines under the name in the menu
- * @param icon        the menu item; for a hat, balloon or outfit, the menu shows the item itself instead
+ * @param iconSpec    the menu item; for a hat, balloon or outfit, the menu shows the item itself instead
  * @param permission  needed to use it; empty for everyone
  * @param minProtocol the oldest client protocol that can show it; older clients do not see it in the menu
  * @param look        what it is: a {@link Trail}, {@link Hat}, {@link Gadget}, {@link Pet}, {@link Balloon} or
  *                    {@link Outfit}, matching the type
  */
-public record Cosmetic(CosmeticType type, String id, String name, List<String> lore, Material icon, String permission,
+public record Cosmetic(CosmeticType type, String id, String name, List<String> lore, ItemSpec iconSpec, String permission,
                        int minProtocol, Look look) {
 
     /** The settings of one kind of cosmetic. */
@@ -49,6 +51,11 @@ public record Cosmetic(CosmeticType type, String id, String name, List<String> l
         if (!matches) {
             throw new IllegalArgumentException("a " + type.configName() + " needs its " + type.configName() + " settings");
         }
+    }
+
+    /** The base vanilla material of this cosmetic's menu icon. */
+    public Material icon() {
+        return iconSpec.material();
     }
 
     public @Nullable Trail trail() {
@@ -80,8 +87,8 @@ public record Cosmetic(CosmeticType type, String id, String name, List<String> l
         return switch (look) {
             case Hat hat -> hat.item();
             case Balloon balloon -> balloon.look().item();
-            case Outfit outfit -> outfit.menuItem(icon);
-            default -> ItemStack.of(icon);
+            case Outfit outfit -> outfit.menuItem(iconSpec);
+            default -> ItemResolver.Active.get().build(iconSpec);
         };
     }
 
@@ -93,13 +100,18 @@ public record Cosmetic(CosmeticType type, String id, String name, List<String> l
     /**
      * What a hat puts on the head; also what a balloon looks like.
      *
-     * @param profile for a player head: whose skin it shows; {@code null} for any other item
+     * @param itemSpec the worn item (vanilla or ItemsAdder custom model)
+     * @param profile  for a player head: whose skin it shows; {@code null} for any other item
      */
-    public record Hat(Material material, @Nullable ResolvableProfile profile) implements Look {
+    public record Hat(ItemSpec itemSpec, @Nullable ResolvableProfile profile) implements Look {
+
+        public Material material() {
+            return itemSpec.material();
+        }
 
         /** The worn item. Needs a running server (item components). */
         public ItemStack item() {
-            ItemStack item = ItemStack.of(material);
+            ItemStack item = ItemResolver.Active.get().build(itemSpec);
             return profile == null ? item : item.with(DataComponents.PROFILE, profile);
         }
     }
@@ -234,7 +246,7 @@ public record Cosmetic(CosmeticType type, String id, String name, List<String> l
      * @param pieces by slot: the item; a helmet is only worn when the player has no hat
      * @param color  the dye of leather pieces, or {@code null} for their own color
      */
-    public record Outfit(Map<EquipmentSlot, Material> pieces, @Nullable RGBLike color) implements Look {
+    public record Outfit(Map<EquipmentSlot, ItemSpec> pieces, @Nullable RGBLike color) implements Look {
 
         public Outfit {
             pieces = Map.copyOf(pieces);
@@ -243,25 +255,25 @@ public record Cosmetic(CosmeticType type, String id, String name, List<String> l
         /** The worn items by slot. Needs a running server (item components). */
         public Map<EquipmentSlot, ItemStack> items() {
             Map<EquipmentSlot, ItemStack> items = new EnumMap<>(EquipmentSlot.class);
-            pieces.forEach((slot, material) -> items.put(slot, piece(material)));
+            pieces.forEach((slot, spec) -> items.put(slot, piece(spec)));
             return items;
         }
 
-        private ItemStack piece(Material material) {
-            ItemStack item = ItemStack.of(material);
-            return color != null && dyeable(material) ? item.with(DataComponents.DYED_COLOR, color) : item;
+        private ItemStack piece(ItemSpec spec) {
+            ItemStack item = ItemResolver.Active.get().build(spec);
+            return color != null && dyeable(item.material()) ? item.with(DataComponents.DYED_COLOR, color) : item;
         }
 
         /** The chest piece (or any piece) for the menu, else {@code fallback}. */
-        ItemStack menuItem(Material fallback) {
+        ItemStack menuItem(ItemSpec fallback) {
             for (EquipmentSlot slot : List.of(EquipmentSlot.CHESTPLATE, EquipmentSlot.LEGGINGS, EquipmentSlot.BOOTS,
                     EquipmentSlot.HELMET)) {
-                Material material = pieces.get(slot);
-                if (material != null) {
-                    return piece(material);
+                ItemSpec spec = pieces.get(slot);
+                if (spec != null) {
+                    return piece(spec);
                 }
             }
-            return ItemStack.of(fallback);
+            return ItemResolver.Active.get().build(fallback);
         }
 
         /** True for leather armor, which can be dyed. */

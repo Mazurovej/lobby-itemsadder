@@ -140,9 +140,9 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
         if (look == null) {
             return null;
         }
-        Material icon = switch (look) {
-            case Cosmetic.Hat hat -> hat.material();
-            case Cosmetic.Balloon balloon -> balloon.look().material();
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec icon = switch (look) {
+            case Cosmetic.Hat hat -> hat.itemSpec();
+            case Cosmetic.Balloon balloon -> balloon.look().itemSpec();
             case Cosmetic.Trail ignored -> icon(reader, path, "blaze_powder", minProtocol);
             case Cosmetic.Pet ignored -> icon(reader, path, "bone", minProtocol);
             case Cosmetic.Outfit ignored -> icon(reader, path, "leather_chestplate", minProtocol);
@@ -160,24 +160,31 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
         return icon == null ? null : new Cosmetic(type, id, name, lore, icon, permission, minProtocol, look);
     }
 
-    private static @Nullable Material icon(ConfigReader reader, String path, String fallback, int minProtocol) {
-        return material(reader, path + ".icon", reader.string(path + ".icon", fallback), minProtocol);
+    private static @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec icon(
+            ConfigReader reader, String path, String fallback, int minProtocol) {
+        var base = itemSpec(reader, path + ".icon", reader.string(path + ".icon", fallback), minProtocol);
+        if (base == null) {
+            return null;
+        }
+        int cmd = reader.integer(path + ".custom-model-data", 0, Integer.MAX_VALUE, -1);
+        String itemModel = reader.string(path + ".item-model", "").strip();
+        return base.withModelOverrides(cmd >= 0 ? cmd : null, itemModel.isEmpty() ? null : itemModel);
     }
 
     /**
-     * The material, or {@code null} with a warning. Items unknown to 1.8 are only warned about when 1.8 players can
-     * see the cosmetic.
+     * The item spec, or {@code null} with a warning. Vanilla items unknown to 1.8 are only warned about when 1.8
+     * players can see the cosmetic.
      */
-    private static @Nullable Material material(ConfigReader reader, String option, String name, int minProtocol) {
+    private static @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec itemSpec(
+            ConfigReader reader, String option, String name, int minProtocol) {
         if (minProtocol <= ProtocolVersions.V1_8) {
-            return MenuConfig.material(reader, option, name);
+            return MenuConfig.itemSpec(reader, option, name);
         }
-        String key = name.strip().toLowerCase(Locale.ROOT);
-        Material material = Material.fromKey(key.contains(":") ? key : "minecraft:" + key);
-        if (material == null) {
-            reader.reportInvalid(option, name, "an item name like \"diamond_sword\"");
+        var spec = io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.parse(name);
+        if (spec == null) {
+            reader.reportInvalid(option, name, "an item name like \"diamond_sword\" or \"itemsadder:namespace:id\"");
         }
-        return material;
+        return spec;
     }
 
     private static Cosmetic.@Nullable Trail trail(ConfigReader reader, String path) {
@@ -238,17 +245,18 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
     }
 
     private static Cosmetic.@Nullable Outfit outfit(ConfigReader reader, String path, int minProtocol) {
-        Map<EquipmentSlot, Material> pieces = new EnumMap<>(EquipmentSlot.class);
+        Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> pieces =
+                new EnumMap<>(EquipmentSlot.class);
         for (String option : List.of("helmet", "chest", "legs", "feet")) {
             String name = reader.string(path + "." + option, "").strip();
             if (name.isEmpty()) {
                 continue;
             }
-            Material material = material(reader, path + "." + option, name, minProtocol);
-            if (material == null) {
+            var spec = itemSpec(reader, path + "." + option, name, minProtocol);
+            if (spec == null) {
                 return null;
             }
-            pieces.put(OUTFIT_SLOTS.get(option), material);
+            pieces.put(OUTFIT_SLOTS.get(option), spec);
         }
         if (pieces.isEmpty()) {
             reader.reportInvalid(path, "", "at least one of helmet, chest, legs and feet");
@@ -260,7 +268,8 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
             color = color(colorName);
             if (color == null) {
                 reader.reportInvalid(path + ".color", colorName, "a color like \"#ff5555\" or \"red\"");
-            } else if (pieces.values().stream().noneMatch(Cosmetic.Outfit::dyeable)) {
+            } else if (pieces.values().stream().noneMatch(spec -> spec.isItemsAdder()
+                    || Cosmetic.Outfit.dyeable(spec.material()))) {
                 reader.addWarning(reader.fileName() + ": '" + path + ".color' only dyes leather armor;"
                         + " it is ignored here.");
             }
@@ -268,24 +277,28 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
         return new Cosmetic.Outfit(pieces, color);
     }
 
-    /** {@code material}, with a head's {@code texture} (a skin value) or {@code head-owner} (a player name). */
+    /** {@code material} (or {@code itemsadder:ns:id}), with a head's {@code texture} or {@code head-owner}. */
     private static Cosmetic.@Nullable Hat hat(ConfigReader reader, String path, int minProtocol) {
-        Material material = material(reader, path + ".material", reader.string(path + ".material", "player_head"),
+        var base = itemSpec(reader, path + ".material", reader.string(path + ".material", "player_head"),
                 minProtocol);
-        if (material == null) {
+        if (base == null) {
             return null;
         }
+        int cmd = reader.integer(path + ".custom-model-data", 0, Integer.MAX_VALUE, -1);
+        String itemModel = reader.string(path + ".item-model", "").strip();
+        var spec = base.withModelOverrides(cmd >= 0 ? cmd : null, itemModel.isEmpty() ? null : itemModel);
+
         String texture = reader.string(path + ".texture", "").strip();
         String owner = reader.string(path + ".head-owner", "").strip();
-        if (material != Material.PLAYER_HEAD) {
+        if (spec.isItemsAdder() || spec.material() != Material.PLAYER_HEAD) {
             if (!texture.isEmpty() || !owner.isEmpty()) {
                 reader.addWarning(reader.fileName() + ": '" + path + "' sets texture or head-owner, which only works"
                         + " with material: player_head; they are ignored.");
             }
-            return new Cosmetic.Hat(material, null);
+            return new Cosmetic.Hat(spec, null);
         }
         if (!texture.isEmpty()) {
-            return new Cosmetic.Hat(material, new ResolvableProfile(new PlayerSkin(texture, null)));
+            return new Cosmetic.Hat(spec, new ResolvableProfile(new PlayerSkin(texture, null)));
         }
         if (!owner.isEmpty()) {
             if (!owner.matches("[A-Za-z0-9_]{1,16}")) {
@@ -293,9 +306,9 @@ public record CosmeticsConfig(boolean enabled, double viewDistance, int perViewe
                 return null;
             }
             // The client looks the skin up itself, as for a player head placed in the world.
-            return new Cosmetic.Hat(material, new ResolvableProfile(new ResolvableProfile.Partial(owner, null, List.of())));
+            return new Cosmetic.Hat(spec, new ResolvableProfile(new ResolvableProfile.Partial(owner, null, List.of())));
         }
-        return new Cosmetic.Hat(material, null);
+        return new Cosmetic.Hat(spec, null);
     }
 
     private static Cosmetic.@Nullable Gadget gadget(ConfigReader reader, String path) {

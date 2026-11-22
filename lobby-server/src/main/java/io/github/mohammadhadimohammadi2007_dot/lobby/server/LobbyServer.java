@@ -165,6 +165,7 @@ public final class LobbyServer implements ServerInfo {
     private LiteBansService liteBans;
     private SkinsRestorerReader skinsRestorer;
     private BridgeService bridge;
+    private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder;
     private ChatSystem chat;
     private ActionServices actions;
     private MenuService menus;
@@ -392,6 +393,12 @@ public final class LobbyServer implements ServerInfo {
         if (offlineStandalone && (skinsRestorer != null || mojang != null)) {
             new OfflineSkinListener(skinsRestorer, mojang).register(global);
         }
+
+        itemsAdder = new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService(
+                configManager.dataDir(), text, permissions);
+        integrations.add(itemsAdder.reload(settings.itemsAdder()));
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.set(itemsAdder);
+        placeholders.textPreprocessor(itemsAdder::replaceGlyphsInTemplate);
     }
 
     /** LuckPerms if enabled and included in this build (operators on top); otherwise operators only. */
@@ -424,6 +431,7 @@ public final class LobbyServer implements ServerInfo {
     private void startPlaceholders() {
         BuiltinPlaceholders.registerAll(placeholders.registry(),
                 new BuiltinPlaceholders.Sources(configManager, permissions, muteService, bridge, this, lobbies));
+        placeholders.registry().register("img", itemsAdder.placeholders());
         // Rank changes (LuckPerms) drop the player's cached prefix, suffix and permissions.
         permissions.onMetaChange(placeholders::invalidate);
     }
@@ -582,6 +590,7 @@ public final class LobbyServer implements ServerInfo {
         }
         chat = ChatSystem.start(new ChatSystem.Dependencies(configManager, text, permissions, muteService, bridge,
                 database, signedVelocity));
+        chat.itemsAdder(itemsAdder);
     }
 
     private void registerListeners() {
@@ -597,6 +606,7 @@ public final class LobbyServer implements ServerInfo {
         });
         new SpawnListener(configManager, lobbies::forJoin).register(playerEvents);
         bridge.register(playerEvents);
+        itemsAdder.register(playerEvents);
         placeholders.register(playerEvents);
         chat.register(playerEvents, MinecraftServer.getCommandManager());
         menus.register(playerEvents);
@@ -664,6 +674,11 @@ public final class LobbyServer implements ServerInfo {
         if (console != null) {
             console.colors(reloaded.config().console().colors());
         }
+        // Reload ItemsAdder items, glyphs and resource pack before rebuilding displays and hotbars.
+        IntegrationStatus iaStatus = itemsAdder.reload(reloaded.integrations().itemsAdder());
+        integrations.removeIf(status -> status.name().equals(
+                io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService.INTEGRATION_NAME));
+        integrations.add(iaStatus);
         // Config values used by placeholders (operators, server name...) may have changed.
         placeholders.invalidateAll();
         chat.reload(reloaded);
@@ -770,6 +785,7 @@ public final class LobbyServer implements ServerInfo {
             database.close();
             LOGGER.info("Database connections closed.");
         }
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.reset();
     }
 
     /** Whether players are muted (LiteBans), for the chat system. */

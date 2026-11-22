@@ -1,6 +1,9 @@
 package io.github.mohammadhadimohammadi2007_dot.lobby.server.menu;
 
 import io.github.mohammadhadimohammadi2007_dot.lobby.server.chat.render.ComponentTransforms;
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderItem;
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver;
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec;
 import io.github.mohammadhadimohammadi2007_dot.lobby.server.placeholder.LobbyText;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
@@ -20,8 +23,12 @@ public final class MenuItems {
 
     /** The item for this viewer. Old clients get the 16 colors, since they cannot show the others. */
     public static ItemStack build(MenuItem item, Player viewer, LobbyText text, boolean legacyClient) {
-        return build(ItemStack.of(item.material(), item.amount()), item.name(), item.lore(), item.glow(), viewer, text,
-                legacyClient);
+        ItemResolver resolver = ItemResolver.Active.get();
+        ItemStack base = resolver.build(item.item(), item.amount());
+        ItemsAdderItem ia = resolver.itemsAdderItem(item.item());
+        String name = !item.name().isBlank() ? item.name() : (ia != null && ia.displayName() != null ? ia.displayName() : "");
+        List<String> lore = !item.lore().isEmpty() ? item.lore() : (ia != null ? ia.lore() : List.of());
+        return build(base, name, lore, item.glow(), viewer, text, legacyClient);
     }
 
     /**
@@ -49,8 +56,13 @@ public final class MenuItems {
     }
 
     /** A filler item with no name, for the empty slots of a menu. */
+    static ItemStack filler(ItemSpec spec) {
+        return ItemResolver.Active.get().build(spec, 1).builder().customName(Component.empty()).build();
+    }
+
+    /** A filler item with no name, for the empty slots of a menu. */
     static ItemStack filler(Material material) {
-        return ItemStack.builder(material).customName(Component.empty()).build();
+        return filler(ItemSpec.of(material));
     }
 
     /**

@@ -34,6 +34,7 @@ public final class ChatRenderer {
     private final LobbyText text;
     private final Supplier<ChatConfig> config;
     private final Supplier<Messages> messages;
+    private volatile @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder;
     private volatile PlayerTextParser parser;
     private volatile ChatConfig parserConfig;
 
@@ -41,6 +42,11 @@ public final class ChatRenderer {
         this.text = text;
         this.config = config;
         this.messages = messages;
+    }
+
+    /** Optional ItemsAdder integration for replacing {@code :glyph:} shortcodes in player chat. */
+    public void itemsAdder(@Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService service) {
+        this.itemsAdder = service;
     }
 
     /**
@@ -87,6 +93,10 @@ public final class ChatRenderer {
             body = parser(chat).parse(raw, true);
         } else {
             body = Component.text(raw);
+        }
+        var ia = itemsAdder;
+        if (ia != null && !key.legacy()) {
+            body = ia.replaceGlyphsInChat(body, message.sender(), emojis);
         }
         if (key.mentioned() != null) {
             String name = message.mentionedNames().get(key.mentioned());

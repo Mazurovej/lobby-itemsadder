@@ -109,6 +109,11 @@ public final class ChatSystem {
         return service().services().settings();
     }
 
+    /** Connects ItemsAdder so player chat messages can use {@code :glyph:} shortcodes. */
+    public void itemsAdder(@Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder) {
+        service.services().renderer().itemsAdder(itemsAdder);
+    }
+
     public ChatService service() {
         return service;
     }

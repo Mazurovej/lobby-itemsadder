@@ -79,7 +79,7 @@ class CosmeticsConfigTest {
         assertEquals(4, ocean.pieces().size());
         assertNotNull(ocean.color());
         assertEquals(Material.DIAMOND_CHESTPLATE,
-                config.find(CosmeticType.OUTFIT, "diamond").outfit().pieces().get(EquipmentSlot.CHESTPLATE));
+                config.find(CosmeticType.OUTFIT, "diamond").outfit().pieces().get(EquipmentSlot.CHESTPLATE).material());
     }
 
     @Test

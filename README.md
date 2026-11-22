@@ -133,7 +133,8 @@ Operators (`/op`, stored in `data/ops.yml`) have every permission, also with Luc
 - Integrations: [Database](docs/integrations/database.md) ·
   [LuckPerms](docs/integrations/luckperms.md) ·
   [LiteBans](docs/integrations/litebans.md) ·
-  [SkinsRestorer](docs/integrations/skinsrestorer.md)
+  [SkinsRestorer](docs/integrations/skinsrestorer.md) ·
+  [ItemsAdder](docs/integrations/itemsadder.md)
 - [Bridge protocol](docs/bridge-protocol.md) (for developers)
 
 ## Roadmap

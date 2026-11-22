@@ -52,7 +52,7 @@ public final class HologramData {
     private volatile HologramType type;
     private volatile Pos position;
     private volatile List<List<String>> frames;
-    private volatile @Nullable Material item;
+    private volatile @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec itemSpec;
     private volatile @Nullable Block block;
     private volatile double scale = 1;
     private volatile Billboard billboard = Billboard.CENTER;
@@ -127,11 +127,20 @@ public final class HologramData {
     }
 
     public @Nullable Material item() {
-        return item;
+        var spec = itemSpec;
+        return spec == null ? null : spec.material();
     }
 
     public void item(@Nullable Material value) {
-        item = value;
+        itemSpec = value == null ? null : io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.of(value);
+    }
+
+    public @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec itemSpec() {
+        return itemSpec;
+    }
+
+    public void itemSpec(@Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec value) {
+        itemSpec = value;
     }
 
     public @Nullable Block block() {
@@ -335,7 +344,7 @@ public final class HologramData {
     public HologramData copy(String newName) {
         HologramData copy = new HologramData(newName, type, position, lines());
         copy.frames(frames);
-        copy.item = item;
+        copy.itemSpec = itemSpec;
         copy.block = block;
         copy.scale = scale;
         copy.billboard = billboard;

@@ -158,13 +158,13 @@ public final class HologramProperties {
             data.lineSpacing(number);
             return Result.ok(data.lineSpacing());
         });
-        property("item", "an item name, for an item hologram", (data, value) -> {
-            Material material = Material.fromKey(key(value));
-            if (material == null) {
+        property("item", "an item name or itemsadder:namespace:id, for an item hologram", (data, value) -> {
+            var spec = io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.parse(value);
+            if (spec == null) {
                 return Result.error("no such item");
             }
-            data.item(material);
-            return Result.ok(material.key().value());
+            data.itemSpec(spec);
+            return Result.ok(spec.serialize());
         });
         property("block", "a block name, for a block hologram", (data, value) -> {
             Block block = Block.fromKey(key(value));

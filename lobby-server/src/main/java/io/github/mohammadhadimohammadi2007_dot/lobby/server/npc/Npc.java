@@ -163,8 +163,9 @@ public final class Npc implements ClientObject {
             metadata.put(MetadataDef.POSE.index(), Metadata.Pose(data.pose().entityPose()));
         }
         Map<EquipmentSlot, ItemStack> equipment = new EnumMap<>(EquipmentSlot.class);
-        for (Map.Entry<EquipmentSlot, Material> item : data.equipment().entrySet()) {
-            equipment.put(item.getKey(), ItemStack.of(item.getValue()));
+        var resolver = io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.get();
+        for (var item : data.equipmentSpecs().entrySet()) {
+            equipment.put(item.getKey(), resolver.build(item.getValue()));
         }
         double scale = key.scaled() ? data.scale() : 1;
         if (!data.isPlayer()) {

@@ -38,8 +38,18 @@ public final class RestartRequired {
             check(changed, "lobbies.players-per-instance",
                     a.lobbies().instanceCount(a.server().maxPlayers()), b.lobbies().instanceCount(b.server().maxPlayers()));
         }
-        // integrations.yml is read once at startup.
-        check(changed, "integrations.yml", before.integrations(), after.integrations());
+        // integrations.yml is read once at startup, except itemsadder which reloads live.
+        IntegrationsConfig ia = before.integrations();
+        IntegrationsConfig ib = after.integrations();
+        if (!Objects.equals(ia.database(), ib.database())
+                || !Objects.equals(ia.luckPerms(), ib.luckPerms())
+                || !Objects.equals(ia.liteBans(), ib.liteBans())
+                || !Objects.equals(ia.skinsRestorer(), ib.skinsRestorer())
+                || !Objects.equals(ia.bridge(), ib.bridge())
+                || !Objects.equals(ia.signedVelocity(), ib.signedVelocity())
+                || !Objects.equals(ia.mineSkin(), ib.mineSkin())) {
+            changed.add("integrations.yml");
+        }
         // Chat storage (tables, log files) is opened once at startup; everything else in chat.yml reloads.
         check(changed, "chat.yml storage", before.chat().storage(), after.chat().storage());
         return changed;

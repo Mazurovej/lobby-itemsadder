@@ -154,10 +154,11 @@ public final class HologramParts {
 
     /** The item shown by an item hologram, or the block's item form for a block hologram. */
     private static ItemStack legacyItem(HologramData data) {
-        Material material = data.item();
-        if (material == null && data.block() != null) {
-            material = Material.fromKey(data.block().key());
+        var spec = data.itemSpec();
+        if (spec != null) {
+            return io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.get().build(spec);
         }
+        Material material = data.block() != null ? Material.fromKey(data.block().key()) : null;
         return material == null ? ItemStack.of(Material.STONE) : ItemStack.of(material);
     }
 

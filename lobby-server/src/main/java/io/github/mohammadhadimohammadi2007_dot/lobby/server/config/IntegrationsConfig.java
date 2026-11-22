@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
  * @param bridge        proxy bridge settings
  * @param signedVelocity SignedVelocity sync settings
  * @param mineSkin      MineSkin settings
+ * @param itemsAdder    ItemsAdder settings
  */
 public record IntegrationsConfig(
         Database database,
@@ -21,7 +22,8 @@ public record IntegrationsConfig(
         SkinsRestorer skinsRestorer,
         Bridge bridge,
         SignedVelocity signedVelocity,
-        MineSkin mineSkin
+        MineSkin mineSkin,
+        ItemsAdder itemsAdder
 ) {
 
     private static final int MAX_PORT = 65535;
@@ -73,6 +75,40 @@ public record IntegrationsConfig(
         }
     }
 
+    /** {@code itemsadder:} section. Reloadable live with {@code /setup-lobby reload}. */
+    public record ItemsAdder(
+            boolean enabled,
+            String dataPath,
+            String packZip,
+            ResourcePack resourcePack,
+            Chat chat
+    ) {
+        public static final ItemsAdder DISABLED = new ItemsAdder(
+                false, "itemsadder", "",
+                new ResourcePack("", "", false, "", "", false),
+                new Chat(true, ""));
+
+        /** {@code itemsadder.resource-pack:} section. */
+        public record ResourcePack(
+                String url,
+                String hash,
+                boolean required,
+                String prompt,
+                String kickMessage,
+                boolean replace
+        ) {
+            public boolean hasUrl() {
+                return !url.isBlank();
+            }
+        }
+
+        /** {@code itemsadder.chat:} section. */
+        public record Chat(boolean replaceGlyphs, String glyphPermission) {
+        }
+    }
+
+    private static final Pattern SHA1_HEX = Pattern.compile("[0-9a-fA-F]{40}");
+
     /** True if any enabled integration needs the shared database pool. */
     public boolean needsDatabase() {
         return luckPerms.enabled || liteBans.enabled || skinsRestorer.enabled;
@@ -107,7 +143,51 @@ public record IntegrationsConfig(
         Bridge bridge = new Bridge(reader.bool("bridge.enabled"));
         SignedVelocity signedVelocity = new SignedVelocity(reader.bool("signedvelocity.enabled"));
         MineSkin mineSkin = new MineSkin(reader.string("mineskin.api-key", "").strip());
-        return new IntegrationsConfig(database, luckPerms, liteBans, skinsRestorer, bridge, signedVelocity, mineSkin);
+        ItemsAdder itemsAdder = readItemsAdder(reader);
+        return new IntegrationsConfig(database, luckPerms, liteBans, skinsRestorer, bridge, signedVelocity, mineSkin,
+                itemsAdder);
+    }
+
+    private static ItemsAdder readItemsAdder(ConfigReader reader) {
+        boolean enabled = reader.bool("itemsadder.enabled", false);
+        String dataPath = reader.string("itemsadder.data-path", "itemsadder").strip();
+        String packZip = reader.string("itemsadder.pack-zip", "").strip();
+
+        String url = reader.string("itemsadder.resource-pack.url", "").strip();
+        if (!url.isEmpty() && !isValidHttpUrl(url)) {
+            reader.reportInvalid("itemsadder.resource-pack.url", url, "an http:// or https:// URL, or \"\"");
+            url = "";
+        }
+        String hash = reader.string("itemsadder.resource-pack.hash", "").strip().toLowerCase(java.util.Locale.ROOT);
+        if (!hash.isEmpty() && !SHA1_HEX.matcher(hash).matches()) {
+            reader.reportInvalid("itemsadder.resource-pack.hash", hash, "a 40-character SHA-1 hex hash, or \"\"");
+            hash = "";
+        }
+        ItemsAdder.ResourcePack resourcePack = new ItemsAdder.ResourcePack(
+                url,
+                hash,
+                reader.bool("itemsadder.resource-pack.required", false),
+                reader.string("itemsadder.resource-pack.prompt", "<gold>This server uses a custom resource pack."),
+                reader.string("itemsadder.resource-pack.kick-message",
+                        "<red>You must accept the server resource pack to play here."),
+                reader.bool("itemsadder.resource-pack.replace", false));
+
+        ItemsAdder.Chat chat = new ItemsAdder.Chat(
+                reader.bool("itemsadder.chat.replace-glyphs", true),
+                reader.string("itemsadder.chat.glyph-permission", "").strip());
+
+        return new ItemsAdder(enabled, dataPath, packZip, resourcePack, chat);
+    }
+
+    private static boolean isValidHttpUrl(String value) {
+        try {
+            java.net.URI uri = java.net.URI.create(value);
+            String scheme = uri.getScheme();
+            return ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    && uri.getHost() != null && !uri.getHost().isBlank();
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
     }
 
     private static String prefix(ConfigReader reader, String path) throws ConfigException {

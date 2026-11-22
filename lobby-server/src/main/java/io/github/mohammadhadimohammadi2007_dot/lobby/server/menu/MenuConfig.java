@@ -4,6 +4,7 @@ import io.github.mohammadhadimohammadi2007_dot.lobby.server.action.ActionList;
 import io.github.mohammadhadimohammadi2007_dot.lobby.server.action.ActionParser;
 import io.github.mohammadhadimohammadi2007_dot.lobby.server.compat.LegacyItems;
 import io.github.mohammadhadimohammadi2007_dot.lobby.server.config.ConfigReader;
+import io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec;
 import net.minestom.server.item.Material;
 import org.jetbrains.annotations.Nullable;
 
@@ -39,7 +40,7 @@ public record MenuConfig(Map<String, MenuDefinition> menus) {
             String path = "menus." + name;
             int rows = reader.integer(path + ".rows", 1, MenuDefinition.MAX_ROWS, 3);
             String fillName = reader.string(path + ".fill", "").strip();
-            Material fill = fillName.isEmpty() ? null : material(reader, path + ".fill", fillName);
+            ItemSpec fill = fillName.isEmpty() ? null : itemSpec(reader, path + ".fill", fillName);
             List<MenuItem> items = new ArrayList<>();
             for (String itemName : reader.keys(path + ".items")) {
                 MenuItem item = readItem(reader, path + ".items." + itemName, rows);
@@ -59,9 +60,8 @@ public record MenuConfig(Map<String, MenuDefinition> menus) {
         if (slots.isEmpty()) {
             return null;
         }
-        String materialName = reader.string(path + ".material", "stone");
-        Material material = material(reader, path + ".material", materialName);
-        if (material == null) {
+        ItemSpec item = itemSpecWithOverrides(reader, path, "stone");
+        if (item == null) {
             return null;
         }
         List<MenuCondition> conditions = new ArrayList<>();
@@ -75,7 +75,7 @@ public record MenuConfig(Map<String, MenuDefinition> menus) {
         ActionList actions = ActionParser.parseList(reader.entryList(path + ".actions"),
                 reader.integer(path + ".click-cooldown", 0, MAX_CLICK_COOLDOWN_MILLIS, DEFAULT_CLICK_COOLDOWN_MILLIS),
                 reader.fileName() + ": " + path + ".actions", reader::addWarning);
-        return new MenuItem(slots, material, reader.integer(path + ".amount", 1, MAX_AMOUNT, 1),
+        return new MenuItem(slots, item, reader.integer(path + ".amount", 1, MAX_AMOUNT, 1),
                 reader.string(path + ".name", ""), reader.stringList(path + ".lore", List.of()),
                 reader.bool(path + ".glow", false), conditions, actions);
     }
@@ -128,5 +128,30 @@ public record MenuConfig(Map<String, MenuDefinition> menus) {
         }
         LegacyItems.warnIfMissing(material, reader.fileName() + ": " + option);
         return material;
+    }
+
+    /** Parses a vanilla material or ItemsAdder item ({@code itemsadder:ns:id} / {@code ia:ns:id}). */
+    public static @Nullable ItemSpec itemSpec(ConfigReader reader, String option, String name) {
+        ItemSpec spec = ItemSpec.parse(name);
+        if (spec == null) {
+            reader.reportInvalid(option, name, "an item name like \"diamond_sword\" or \"itemsadder:namespace:id\"");
+            return null;
+        }
+        if (!spec.isItemsAdder()) {
+            LegacyItems.warnIfMissing(spec.material(), reader.fileName() + ": " + option);
+        }
+        return spec;
+    }
+
+    /** Reads {@code material} plus optional {@code custom-model-data} and {@code item-model} at {@code path}. */
+    public static @Nullable ItemSpec itemSpecWithOverrides(ConfigReader reader, String path, String defaultMaterial) {
+        ItemSpec base = itemSpec(reader, path + ".material", reader.string(path + ".material", defaultMaterial));
+        if (base == null) {
+            return null;
+        }
+        int cmd = reader.integer(path + ".custom-model-data", 0, Integer.MAX_VALUE, -1);
+        Integer customModelData = cmd >= 0 ? cmd : null;
+        String itemModel = reader.string(path + ".item-model", "").strip();
+        return base.withModelOverrides(customModelData, itemModel.isEmpty() ? null : itemModel);
     }
 }

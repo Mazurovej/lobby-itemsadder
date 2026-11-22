@@ -44,9 +44,15 @@ public final class PlaceholderService {
     private final Map<String, PlaceholderTemplate> templates = new ConcurrentHashMap<>();
     private final Map<String, Cached> globalValues = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Cached>> playerValues = new ConcurrentHashMap<>();
+    private volatile java.util.function.UnaryOperator<String> textPreprocessor = java.util.function.UnaryOperator.identity();
 
     public PlaceholderService(PlaceholderRegistry registry) {
         this.registry = registry;
+    }
+
+    /** Installs a preprocessor run on trusted MiniMessage templates before parsing (e.g. ItemsAdder glyphs). */
+    public void textPreprocessor(java.util.function.UnaryOperator<String> preprocessor) {
+        this.textPreprocessor = preprocessor == null ? java.util.function.UnaryOperator.identity() : preprocessor;
     }
 
     /** The registry, for adding namespaces. */
@@ -75,11 +81,12 @@ public final class PlaceholderService {
      * player placeholders describe {@code target} (the sender), relational ones use both.
      */
     public Component render(String template, @Nullable Player target, @Nullable Player viewer, TagResolver... extra) {
-        PlaceholderTemplate parsed = template(template);
+        String processed = textPreprocessor.apply(template);
+        PlaceholderTemplate parsed = template(processed);
         if (!parsed.hasReferences()) {
-            return MINI_MESSAGE.deserialize(template, TagResolver.resolver(extra));
+            return MINI_MESSAGE.deserialize(processed, TagResolver.resolver(extra));
         }
-        StringBuilder source = new StringBuilder(template.length() + 32);
+        StringBuilder source = new StringBuilder(processed.length() + 32);
         List<Component> inserted = new ArrayList<>();
         for (PlaceholderTemplate.Piece piece : parsed.pieces()) {
             switch (piece) {

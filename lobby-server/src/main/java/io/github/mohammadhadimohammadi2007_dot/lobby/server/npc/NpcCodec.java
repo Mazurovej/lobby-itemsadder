@@ -107,8 +107,8 @@ public final class NpcCodec implements DataCodec<NpcData> {
             node.node("pose").set(data.pose().configName());
             node.node("show-in-tab").set(data.showInTab());
         }
-        for (Map.Entry<EquipmentSlot, Material> item : data.equipment().entrySet()) {
-            node.node("equipment", slotName(item.getKey())).set(item.getValue().key().value());
+        for (var item : data.equipmentSpecs().entrySet()) {
+            node.node("equipment", slotName(item.getKey())).set(item.getValue().serialize());
         }
         node.node("view-distance").set(data.viewDistance());
         node.node("permission").set(data.permission());
@@ -169,13 +169,13 @@ public final class NpcCodec implements DataCodec<NpcData> {
             String slotName = String.valueOf(entry.getKey());
             EquipmentSlot slot = slot(slotName);
             String itemName = entry.getValue().getString("");
-            Material material = Material.fromKey(itemName.contains(":") ? itemName : "minecraft:" + itemName.strip());
-            if (slot == null || material == null) {
+            var spec = io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec.parse(itemName);
+            if (slot == null || spec == null) {
                 LOGGER.warn("{}: {}.equipment.{}: '{}' is not a slot and an item name. Skipped.",
                         FILE, name, slotName, itemName);
                 continue;
             }
-            data.equipment(slot, material);
+            data.equipmentSpec(slot, spec);
         }
     }
 
