@@ -206,8 +206,9 @@ public final class VoiceChatServer {
 
     private void udpLoop() {
         byte[] buffer = new byte[UDP_BUFFER_SIZE];
+        DatagramPacket datagram = new DatagramPacket(buffer, buffer.length);
         while (running.get()) {
-            DatagramPacket datagram = new DatagramPacket(buffer, buffer.length);
+            datagram.setLength(buffer.length);
             try {
                 socket.receive(datagram);
                 handleUdpPacket(datagram.getSocketAddress(), buffer, datagram.getLength());
@@ -298,7 +299,8 @@ public final class VoiceChatServer {
     }
 
     private void handleMic(Session senderSession, VoiceChatCodec.Reader reader) {
-        if (!senderSession.authenticated || senderSession.disabled || senderSession.muted) {
+        if (!senderSession.authenticated || senderSession.disabled || senderSession.muted
+                || sessionsByPlayer.size() <= 1) {
             return;
         }
         Player sender = senderSession.player;

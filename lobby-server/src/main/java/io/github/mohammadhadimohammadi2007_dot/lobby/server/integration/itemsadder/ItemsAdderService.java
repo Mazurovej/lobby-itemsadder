@@ -31,6 +31,7 @@ public final class ItemsAdderService implements ItemResolver {
     private final Path serverDir;
     private final ItemsAdderResourcePack resourcePack;
     private final PermissionService permissions;
+    private final java.util.Map<String, ItemStack> baseItemCache = new java.util.concurrent.ConcurrentHashMap<>();
     private volatile IntegrationsConfig.ItemsAdder config = IntegrationsConfig.ItemsAdder.DISABLED;
     private volatile ItemsAdderRegistry registry = ItemsAdderRegistry.EMPTY;
 
@@ -43,6 +44,7 @@ public final class ItemsAdderService implements ItemResolver {
     /** Loads (or reloads) ItemsAdder definitions and resource pack configuration. */
     public IntegrationStatus reload(IntegrationsConfig.ItemsAdder settings) {
         this.config = settings;
+        this.baseItemCache.clear();
         if (!settings.enabled()) {
             this.registry = ItemsAdderRegistry.EMPTY;
             this.resourcePack.configure(false, settings.resourcePack(), "");
@@ -134,7 +136,13 @@ public final class ItemsAdderService implements ItemResolver {
     public ItemStack build(ItemSpec spec, int amount) {
         int clamped = Math.max(1, amount);
         ItemsAdderItem iaItem = itemsAdderItem(spec);
-        ItemStack base = iaItem != null ? iaItem.toItemStack(clamped) : ItemStack.of(spec.material(), clamped);
+        ItemStack base;
+        if (iaItem != null) {
+            ItemStack cached = baseItemCache.computeIfAbsent(iaItem.id(), ignored -> iaItem.toItemStack(1));
+            base = clamped == 1 ? cached : cached.withAmount(clamped);
+        } else {
+            base = ItemStack.of(spec.material(), clamped);
+        }
         return ItemResolver.applyOverrides(base, spec);
     }
 

@@ -18,16 +18,17 @@ import net.minestom.server.network.packet.server.play.DestroyEntitiesPacket;
 import net.minestom.server.network.packet.server.play.EntityMetaDataPacket;
 import net.minestom.server.network.packet.server.play.SetPassengersPacket;
 import net.minestom.server.network.packet.server.play.SpawnEntityPacket;
+import net.minestom.server.utils.PacketSendingUtils;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.ToIntFunction;
@@ -41,6 +42,10 @@ import java.util.function.ToIntFunction;
  * ({@code #RRGGBB}), gradients, ItemsAdder glyphs, and multiple lines, and respects player visibility
  * and vanish through {@link Player#getViewers()}. Clients older than 1.19.4 automatically keep the
  * classic scoreboard-team nametag from {@link PlayerTeams}.
+ *
+ * <p>Optimized for 200+ players: text is rendered only on the tab refresh interval (not every 5 ticks),
+ * steady-state viewer checks allocate zero packets or temporary sets, and multi-viewer updates are
+ * sent with {@link PacketSendingUtils#sendGroupedPacket} so each packet is serialized once.
  */
 final class UnlimitedNameTags {
 
@@ -65,32 +70,42 @@ final class UnlimitedNameTags {
         this.protocolOf = protocolOf;
     }
 
-    /** Refreshes nametag entities for all online players. Board thread only. */
+    /** Refreshes both text and viewers (convenience overload for tests). */
     void refresh(TabConfig.Nametags config, Collection<Player> online, TextCache textCache) {
+        refresh(config, online, textCache, true);
+    }
+
+    /**
+     * Syncs nametag viewers/sneak state, and re-renders nametag text when {@code refreshText} is true
+     * (or for players seen for the first time). Board thread only.
+     */
+    void refresh(TabConfig.Nametags config, Collection<Player> online, TextCache textCache, boolean refreshText) {
         if (!config.enabled() || !config.unlimited()) {
-            hideAll(online);
+            hideAll();
             return;
-        }
-        Map<UUID, Player> byId = new HashMap<>(online.size() * 2);
-        for (Player p : online) {
-            byId.put(p.getUuid(), p);
         }
 
         // Remove tags for players who are no longer online.
-        List<UUID> departed = new ArrayList<>();
-        for (UUID id : tags.keySet()) {
-            if (!byId.containsKey(id)) {
-                departed.add(id);
+        if (!tags.isEmpty() && tags.size() > online.size()) {
+            Set<UUID> onlineIds = new HashSet<>(online.size() * 2);
+            for (Player p : online) {
+                onlineIds.add(p.getUuid());
             }
-        }
-        for (UUID id : departed) {
-            destroyForAll(tags.remove(id), byId);
+            Iterator<Map.Entry<UUID, TagState>> it = tags.entrySet().iterator();
+            while (it.hasNext()) {
+                Map.Entry<UUID, TagState> entry = it.next();
+                if (!onlineIds.contains(entry.getKey())) {
+                    destroyForAll(entry.getValue());
+                    it.remove();
+                }
+            }
         }
 
         TagLook look = TagLook.of(config);
         for (Player target : online) {
             TagState state = tags.computeIfAbsent(target.getUuid(), ignored -> new TagState());
-            Component rendered = renderNameTag(config, target, textCache);
+            boolean needText = refreshText || state.lastText == null;
+            Component rendered = needText ? renderNameTag(config, target, textCache) : state.lastText;
             boolean sneaking = target.isSneaking();
             boolean changed = !rendered.equals(state.lastText)
                     || sneaking != state.lastSneaking
@@ -99,100 +114,89 @@ final class UnlimitedNameTags {
             state.lastSneaking = sneaking;
             state.lastLook = look;
 
-            Set<UUID> desired = new HashSet<>();
-            for (Player viewer : target.getViewers()) {
-                if (viewer != target && viewer.isOnline()
-                        && protocolOf.applyAsInt(viewer) >= ProtocolVersions.V1_19_4) {
-                    desired.add(viewer.getUuid());
+            Set<? extends Player> currentViewers = target.getViewers();
+            var targetPos = target.getPosition();
+            double maxDistSq = config.viewDistance() * config.viewDistance();
+
+            // 1. Despawn for viewers who can no longer see this player or moved out of nametag view-distance.
+            List<Player> toDestroy = null;
+            Iterator<Player> existingIt = state.viewers.iterator();
+            while (existingIt.hasNext()) {
+                Player viewer = existingIt.next();
+                if (!viewer.isOnline() || !currentViewers.contains(viewer)
+                        || viewer.getPosition().distanceSquared(targetPos) > maxDistSq) {
+                    existingIt.remove();
+                    if (viewer.isOnline()) {
+                        if (toDestroy == null) {
+                            toDestroy = new ArrayList<>();
+                        }
+                        toDestroy.add(viewer);
+                    }
                 }
             }
+            if (toDestroy != null) {
+                PacketSendingUtils.sendGroupedPacket(toDestroy, new DestroyEntitiesPacket(state.entityId));
+            }
 
-            // Despawn for viewers who can no longer see this player.
-            state.viewers.removeIf(viewerId -> {
-                if (desired.contains(viewerId)) {
-                    return false;
-                }
-                Player viewer = byId.get(viewerId);
-                if (viewer != null && viewer.isOnline()) {
-                    viewer.sendPacket(new DestroyEntitiesPacket(state.entityId));
-                }
-                return true;
-            });
-
-            Map<Integer, Metadata.Entry<?>> metadata = null;
-            for (UUID viewerId : desired) {
-                Player viewer = byId.get(viewerId);
-                if (viewer == null || !viewer.isOnline()) {
+            // 2. Find newly visible modern viewers within view-distance.
+            List<Player> newlyAdded = null;
+            for (Player viewer : currentViewers) {
+                if (viewer == target || !viewer.isOnline() || state.viewers.contains(viewer)) {
                     continue;
                 }
-                if (state.viewers.add(viewerId)) {
-                    if (metadata == null) {
-                        metadata = metadata(rendered, sneaking, config);
+                if (protocolOf.applyAsInt(viewer) >= ProtocolVersions.V1_19_4
+                        && viewer.getPosition().distanceSquared(targetPos) <= maxDistSq) {
+                    if (newlyAdded == null) {
+                        newlyAdded = new ArrayList<>();
                     }
-                    viewer.sendPacket(new SpawnEntityPacket(
-                            state.entityId, state.entityUuid, EntityType.TEXT_DISPLAY,
-                            target.getPosition(), 0f, 0, Vec.ZERO));
-                    viewer.sendPacket(new EntityMetaDataPacket(state.entityId, metadata));
-                    viewer.sendPacket(new SetPassengersPacket(target.getEntityId(), passengerIds(target, state.entityId)));
-                } else if (changed) {
-                    if (metadata == null) {
-                        metadata = metadata(rendered, sneaking, config);
-                    }
-                    viewer.sendPacket(new EntityMetaDataPacket(state.entityId, metadata));
+                    newlyAdded.add(viewer);
                 }
             }
-        }
-    }
 
-    /** Immediately updates a player's nametag metadata (e.g. when they start/stop sneaking). Board thread only. */
-    void updateSneak(Player target, TabConfig.Nametags config, Collection<Player> online) {
-        if (!config.enabled() || !config.unlimited()) {
-            return;
-        }
-        TagState state = tags.get(target.getUuid());
-        if (state == null || state.lastText == null || state.viewers.isEmpty()) {
-            return;
-        }
-        boolean sneaking = target.isSneaking();
-        if (sneaking == state.lastSneaking) {
-            return;
-        }
-        state.lastSneaking = sneaking;
-        EntityMetaDataPacket packet = new EntityMetaDataPacket(state.entityId, metadata(state.lastText, sneaking, config));
-        for (Player viewer : online) {
-            if (state.viewers.contains(viewer.getUuid()) && viewer.isOnline()) {
-                viewer.sendPacket(packet);
+            // 3. Send grouped metadata update to existing viewers if text/sneak/look changed.
+            EntityMetaDataPacket metaPacket = null;
+            if (changed && !state.viewers.isEmpty()) {
+                metaPacket = new EntityMetaDataPacket(state.entityId, metadata(rendered, sneaking, config));
+                PacketSendingUtils.sendGroupedPacket(state.viewers, metaPacket);
+            }
+
+            // 4. Spawn + mount for newly added viewers (serialized once via sendGroupedPacket).
+            if (newlyAdded != null) {
+                if (metaPacket == null) {
+                    metaPacket = new EntityMetaDataPacket(state.entityId, metadata(rendered, sneaking, config));
+                }
+                SpawnEntityPacket spawnPacket = new SpawnEntityPacket(
+                        state.entityId, state.entityUuid, EntityType.TEXT_DISPLAY,
+                        target.getPosition(), 0f, 0, Vec.ZERO);
+                SetPassengersPacket passengersPacket = new SetPassengersPacket(
+                        target.getEntityId(), passengerIds(target, state.entityId));
+                PacketSendingUtils.sendGroupedPacket(newlyAdded, spawnPacket);
+                PacketSendingUtils.sendGroupedPacket(newlyAdded, metaPacket);
+                PacketSendingUtils.sendGroupedPacket(newlyAdded, passengersPacket);
+                state.viewers.addAll(newlyAdded);
             }
         }
     }
 
     /** Destroys every nametag entity (e.g. when disabled or switched to vanilla mode on reload). */
-    void hideAll(Collection<Player> online) {
+    void hideAll() {
         if (tags.isEmpty()) {
             return;
         }
-        Map<UUID, Player> byId = new HashMap<>(online.size() * 2);
-        for (Player p : online) {
-            byId.put(p.getUuid(), p);
-        }
         for (TagState state : tags.values()) {
-            destroyForAll(state, byId);
+            destroyForAll(state);
         }
         tags.clear();
     }
 
     /** Forgets a disconnected player (both as target and as viewer). Board thread only. */
-    void forget(UUID playerId, Collection<Player> online) {
+    void forget(UUID playerId) {
         TagState removed = tags.remove(playerId);
         if (removed != null) {
-            Map<UUID, Player> byId = new HashMap<>(online.size() * 2);
-            for (Player p : online) {
-                byId.put(p.getUuid(), p);
-            }
-            destroyForAll(removed, byId);
+            destroyForAll(removed);
         }
         for (TagState state : tags.values()) {
-            state.viewers.remove(playerId);
+            state.viewers.removeIf(p -> p.getUuid().equals(playerId));
         }
     }
 
@@ -220,7 +224,7 @@ final class UnlimitedNameTags {
     }
 
     private static Map<Integer, Metadata.Entry<?>> metadata(Component text, boolean sneaking, TabConfig.Nametags config) {
-        Map<Integer, Metadata.Entry<?>> meta = new LinkedHashMap<>();
+        Map<Integer, Metadata.Entry<?>> meta = new LinkedHashMap<>(8);
         meta.put(MetadataDef.Display.BILLBOARD_CONSTRAINTS.index(), Metadata.Byte(BILLBOARD_CENTER));
         meta.put(MetadataDef.Display.TRANSLATION.index(), Metadata.Vector3(new Vec(0, config.yOffset(), 0)));
         if (config.scale() != 1.0) {
@@ -261,16 +265,18 @@ final class UnlimitedNameTags {
         return ids;
     }
 
-    private static void destroyForAll(@Nullable TagState state, Map<UUID, Player> byId) {
-        if (state == null || state.viewers.isEmpty()) {
+    private static void destroyForAll(TagState state) {
+        if (state.viewers.isEmpty()) {
             return;
         }
-        DestroyEntitiesPacket packet = new DestroyEntitiesPacket(state.entityId);
-        for (UUID viewerId : state.viewers) {
-            Player viewer = byId.get(viewerId);
-            if (viewer != null && viewer.isOnline()) {
-                viewer.sendPacket(packet);
+        List<Player> onlineViewers = new ArrayList<>(state.viewers.size());
+        for (Player viewer : state.viewers) {
+            if (viewer.isOnline()) {
+                onlineViewers.add(viewer);
             }
+        }
+        if (!onlineViewers.isEmpty()) {
+            PacketSendingUtils.sendGroupedPacket(onlineViewers, new DestroyEntitiesPacket(state.entityId));
         }
         state.viewers.clear();
     }
@@ -285,7 +291,7 @@ final class UnlimitedNameTags {
     private static final class TagState {
         final int entityId = Entity.generateId();
         final UUID entityUuid = UUID.randomUUID();
-        final Set<UUID> viewers = new HashSet<>();
+        final Set<Player> viewers = new HashSet<>();
         @Nullable Component lastText;
         boolean lastSneaking;
         @Nullable TagLook lastLook;

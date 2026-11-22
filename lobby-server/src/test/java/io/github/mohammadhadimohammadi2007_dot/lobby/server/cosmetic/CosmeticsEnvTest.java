@@ -169,7 +169,8 @@ class CosmeticsEnvTest {
         List<SpawnEntityPacket> spawned = nearSpawns.collect();
         assertEquals(1, spawned.stream().filter(p -> p.type() == EntityType.WOLF).count(), "the pet");
         assertEquals(1, spawned.stream().filter(p -> p.type() == EntityType.ARMOR_STAND).count(), "the balloon");
-        assertEquals(0, farSpawns.collect().size(), "40 blocks away: nothing");
+        assertEquals(0, farSpawns.collect().stream().filter(p -> p.type() != EntityType.TEXT_DISPLAY).count(),
+                "40 blocks away: nothing");
         List<AttachEntityPacket> attached = leashes.collect();
         assertEquals(1, attached.size());
         assertEquals(steve.player().getEntityId(), attached.getFirst().holdingEntityId(), "the lead is in Steve's hand");

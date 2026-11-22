@@ -25,6 +25,10 @@ public final class ComponentColors {
             "<(reset|(?:/(?:color|c|#[0-9a-fA-F]{6}|[a-z_]+))|(?:(?:color:|c:)?(#[0-9a-fA-F]{6}))|(?:(?:color:|c:)?([a-z_]+)))>",
             Pattern.CASE_INSENSITIVE);
 
+    private static final int MAX_CACHE = 1024;
+    private static final java.util.Map<String, TrailingResult> TRAILING_CACHE =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
     private ComponentColors() {
     }
 
@@ -38,7 +42,7 @@ public final class ComponentColors {
      */
     public static @Nullable TextColor lastColor(@Nullable String rawPrefix, @Nullable Component parsedPrefix) {
         if (rawPrefix != null && !rawPrefix.isBlank()) {
-            TrailingResult trailing = trailingColorInRaw(rawPrefix);
+            TrailingResult trailing = cachedTrailing(rawPrefix);
             if (trailing.found()) {
                 return trailing.color();
             }
@@ -48,6 +52,18 @@ public final class ComponentColors {
         }
         TextColor nonBlank = lastInComponent(parsedPrefix, null, true);
         return nonBlank != null ? nonBlank : lastInComponent(parsedPrefix, null, false);
+    }
+
+    private static TrailingResult cachedTrailing(String raw) {
+        TrailingResult cached = TRAILING_CACHE.get(raw);
+        if (cached != null) {
+            return cached;
+        }
+        TrailingResult computed = trailingColorInRaw(raw);
+        if (TRAILING_CACHE.size() < MAX_CACHE) {
+            TRAILING_CACHE.put(raw, computed);
+        }
+        return computed;
     }
 
     /** Returns the last {@link TextColor} in an already-parsed {@link Component}, or {@code null}. */

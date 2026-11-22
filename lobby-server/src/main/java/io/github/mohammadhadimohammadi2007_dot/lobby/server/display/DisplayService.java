@@ -123,11 +123,12 @@ public final class DisplayService {
         sidebar.refresh(current.sidebar(), online, text, first ? -1 : previous, now);
         TabConfig tabConfig = current.tab();
         tab.headerAndFooter(tabConfig, online, text, previous, now);
-        if (first || Stagger.due(previous, now, tabConfig.intervalTicks())) {
+        boolean tabDue = first || Stagger.due(previous, now, tabConfig.intervalTicks());
+        if (tabDue) {
             tab.refresh(tabConfig, online, text);
             playerTeams.refresh(tabConfig, online, text);
         }
-        unlimitedNameTags.refresh(tabConfig.nametags(), online, text);
+        unlimitedNameTags.refresh(tabConfig.nametags(), online, text, tabDue);
         bars.refresh(current.bars(), online, text, first ? -1 : previous, now);
     }
 
@@ -140,7 +141,7 @@ public final class DisplayService {
             tab.reset(online);
         }
         if (!next.tab().nametags().enabled() || !next.tab().nametags().unlimited()) {
-            unlimitedNameTags.hideAll(online);
+            unlimitedNameTags.hideAll();
         }
         if (!next.bars().bossBar().enabled()) {
             bars.hideAll(online);
@@ -152,7 +153,7 @@ public final class DisplayService {
     private void forget(UUID player) {
         sidebar.forget(player);
         tab.forget(player);
-        unlimitedNameTags.forget(player, MinecraftServer.getConnectionManager().getOnlinePlayers());
+        unlimitedNameTags.forget(player);
         bars.forget(player);
     }
 

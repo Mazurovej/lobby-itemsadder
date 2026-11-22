@@ -22,7 +22,9 @@ public final class VoiceChatCrypto {
     public static final int PROTOCOL_V18 = 18;
     public static final int PROTOCOL_V21 = 21;
 
-    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final ThreadLocal<SecureRandom> THREAD_RANDOM = ThreadLocal.withInitial(SecureRandom::new);
+    private static final ThreadLocal<Cipher> GCM_CIPHER = ThreadLocal.withInitial(() -> newCipher("AES/GCM/NoPadding"));
+    private static final ThreadLocal<Cipher> CBC_CIPHER = ThreadLocal.withInitial(() -> newCipher("AES/CBC/PKCS5Padding"));
     private static final int SECRET_BYTES = 16;
     private static final int GCM_IV_BYTES = 12;
     private static final int GCM_TAG_BITS = 128;
@@ -45,7 +47,7 @@ public final class VoiceChatCrypto {
     /** Creates fresh random credentials for a client using {@code protocolVersion} (18 or 21). */
     public static VoiceChatCrypto generate(int protocolVersion) {
         byte[] secret = new byte[SECRET_BYTES];
-        RANDOM.nextBytes(secret);
+        THREAD_RANDOM.get().nextBytes(secret);
         return new VoiceChatCrypto(protocolVersion, secret, UUID.randomUUID());
     }
 
@@ -80,24 +82,22 @@ public final class VoiceChatCrypto {
     public byte[] encrypt(byte[] plaintext) throws GeneralSecurityException {
         if (isGcm()) {
             byte[] iv = new byte[GCM_IV_BYTES];
-            RANDOM.nextBytes(iv);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+            THREAD_RANDOM.get().nextBytes(iv);
+            Cipher cipher = GCM_CIPHER.get();
             cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
-            byte[] enc = cipher.doFinal(plaintext);
-            byte[] out = new byte[iv.length + enc.length];
-            System.arraycopy(iv, 0, out, 0, iv.length);
-            System.arraycopy(enc, 0, out, iv.length, enc.length);
-            return out;
+            byte[] out = new byte[GCM_IV_BYTES + cipher.getOutputSize(plaintext.length)];
+            System.arraycopy(iv, 0, out, 0, GCM_IV_BYTES);
+            int written = cipher.doFinal(plaintext, 0, plaintext.length, out, GCM_IV_BYTES);
+            return written + GCM_IV_BYTES == out.length ? out : Arrays.copyOf(out, written + GCM_IV_BYTES);
         }
         byte[] iv = new byte[CBC_IV_BYTES];
-        RANDOM.nextBytes(iv);
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
+        THREAD_RANDOM.get().nextBytes(iv);
+        Cipher cipher = CBC_CIPHER.get();
         cipher.init(Cipher.ENCRYPT_MODE, keySpec, new IvParameterSpec(iv));
-        byte[] enc = cipher.doFinal(plaintext);
-        byte[] out = new byte[iv.length + enc.length];
-        System.arraycopy(iv, 0, out, 0, iv.length);
-        System.arraycopy(enc, 0, out, iv.length, enc.length);
-        return out;
+        byte[] out = new byte[CBC_IV_BYTES + cipher.getOutputSize(plaintext.length)];
+        System.arraycopy(iv, 0, out, 0, CBC_IV_BYTES);
+        int written = cipher.doFinal(plaintext, 0, plaintext.length, out, CBC_IV_BYTES);
+        return written + CBC_IV_BYTES == out.length ? out : Arrays.copyOf(out, written + CBC_IV_BYTES);
     }
 
     public byte[] decrypt(byte[] payload) throws GeneralSecurityException {
@@ -105,20 +105,24 @@ public final class VoiceChatCrypto {
             if (payload.length <= GCM_IV_BYTES) {
                 throw new GeneralSecurityException("GCM payload too short");
             }
-            byte[] iv = Arrays.copyOfRange(payload, 0, GCM_IV_BYTES);
-            byte[] body = Arrays.copyOfRange(payload, GCM_IV_BYTES, payload.length);
-            Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
-            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, iv));
-            return cipher.doFinal(body);
+            Cipher cipher = GCM_CIPHER.get();
+            cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_BITS, payload, 0, GCM_IV_BYTES));
+            return cipher.doFinal(payload, GCM_IV_BYTES, payload.length - GCM_IV_BYTES);
         }
         if (payload.length <= CBC_IV_BYTES) {
             throw new GeneralSecurityException("CBC payload too short");
         }
-        byte[] iv = Arrays.copyOfRange(payload, 0, CBC_IV_BYTES);
-        byte[] body = Arrays.copyOfRange(payload, CBC_IV_BYTES, payload.length);
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        cipher.init(Cipher.DECRYPT_MODE, keySpec, new IvParameterSpec(iv));
-        return cipher.doFinal(body);
+        Cipher cipher = CBC_CIPHER.get();
+        cipher.init(Cipher.DECRYPT_MODE, keySpec, new IvParameterSpec(payload, 0, CBC_IV_BYTES));
+        return cipher.doFinal(payload, CBC_IV_BYTES, payload.length - CBC_IV_BYTES);
+    }
+
+    private static Cipher newCipher(String transformation) {
+        try {
+            return Cipher.getInstance(transformation);
+        } catch (GeneralSecurityException e) {
+            throw new IllegalStateException("Missing AES cipher " + transformation, e);
+        }
     }
 
     private static UUID bytesToUuid(byte[] bytes) {

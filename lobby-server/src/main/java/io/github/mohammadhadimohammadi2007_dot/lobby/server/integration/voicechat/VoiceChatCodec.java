@@ -145,7 +145,7 @@ public final class VoiceChatCodec {
 
     /** Wraps an encrypted server->client payload: {@code [0xFF][VarInt len][encrypted]}. */
     public static byte[] encodeServerUdp(byte[] encryptedPayload) {
-        Writer w = new Writer();
+        Writer w = new Writer(6 + encryptedPayload.length);
         w.writeByte(UDP_MAGIC);
         w.writeByteArray(encryptedPayload);
         return w.toByteArray();
@@ -157,7 +157,7 @@ public final class VoiceChatCodec {
 
     public static byte[] encodePlayerSound(UUID channelId, UUID senderUuid, byte[] opusData,
                                            long sequenceNumber, float distance, boolean whispering) {
-        Writer w = new Writer();
+        Writer w = new Writer(52 + opusData.length);
         w.writeByte(PACKET_PLAYER_SOUND);
         w.writeUuid(channelId);
         w.writeUuid(senderUuid);
@@ -179,7 +179,7 @@ public final class VoiceChatCodec {
         }
     }
 
-    /** Minimal big-endian + Minecraft VarInt reader. */
+    /** Minimal big-endian + Minecraft VarInt reader (zero intermediate allocations). */
     public static final class Reader {
         private final byte[] buf;
         private final int limit;
@@ -201,9 +201,16 @@ public final class VoiceChatCodec {
 
         public long readLong() {
             require(8);
-            long v = ByteBuffer.wrap(buf, pos, 8).getLong();
+            int p = pos;
             pos += 8;
-            return v;
+            return ((long) (buf[p] & 0xFF) << 56)
+                    | ((long) (buf[p + 1] & 0xFF) << 48)
+                    | ((long) (buf[p + 2] & 0xFF) << 40)
+                    | ((long) (buf[p + 3] & 0xFF) << 32)
+                    | ((long) (buf[p + 4] & 0xFF) << 24)
+                    | ((long) (buf[p + 5] & 0xFF) << 16)
+                    | ((long) (buf[p + 6] & 0xFF) << 8)
+                    | ((long) (buf[p + 7] & 0xFF));
         }
 
         public UUID readUuid() {
@@ -247,7 +254,15 @@ public final class VoiceChatCodec {
 
     /** Minimal big-endian + Minecraft VarInt writer. */
     private static final class Writer {
-        private final ByteArrayOutputStream out = new ByteArrayOutputStream(128);
+        private final ByteArrayOutputStream out;
+
+        Writer() {
+            this(128);
+        }
+
+        Writer(int initialCapacity) {
+            this.out = new ByteArrayOutputStream(initialCapacity);
+        }
 
         void writeByte(byte b) {
             out.write(b & 0xFF);
