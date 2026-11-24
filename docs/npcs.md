@@ -45,6 +45,7 @@ so admins coming from FancyNpcs can type what they know.
 | `/npc equipment <npc> list\|clear` | Shows or removes everything it holds and wears |
 | `/npc glowing <npc> [true\|false\|toggle\|disabled\|<colour>]` | A glowing outline; a colour (`red`, `dark_purple`... Minecraft's 16) turns it on in that colour |
 | `/npc scale <npc> <factor>` | Its size, 0.0625 to 16 (1 is normal). Clients before 1.20.5 always see it at normal size |
+| `/npc scale_up_when_looking <npc> [true\|false\|toggle\|<factor>] [distance]` | Scales the NPC up per viewer when they look directly at it (default 1.2x within 12 blocks, 1.20.5+ clients) |
 | `/npc pose <npc> <pose>` | `standing`, `crouching`, `sleeping`, `swimming` or `sitting` (player NPCs). FancyNpcs' `/npc attribute <npc> set pose <pose>` works too |
 | `/npc show_in_tab <npc> [true\|false\|toggle]` | Lists a player NPC in everyone's tab list, like a real player (off by default) |
 | `/npc turn_to_player <npc> [true\|false\|toggle]` | Looks at players who come near |
@@ -184,6 +185,9 @@ bedwars:
   glowing: false
   glow-color: white            # Minecraft's 16 colours: red, dark_purple, gold...
   scale: 1.0                   # 1.20.5+ clients; older ones see 1
+  scale-up-when-looking: false # per-viewer scale-up when looking directly at the NPC (1.20.5+ clients)
+  look-scale: 1.2              # multiplier applied to scale while looked at
+  look-scale-distance: 12.0    # max distance in blocks for look-scaling
   pose: standing               # standing, crouching, sleeping, swimming, sitting
   show-in-tab: false
   equipment:                   # main_hand, off_hand, helmet, chestplate, leggings, boots (and body, saddle)

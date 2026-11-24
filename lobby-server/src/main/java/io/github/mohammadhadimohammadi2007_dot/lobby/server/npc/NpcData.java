@@ -36,6 +36,11 @@ public final class NpcData {
     /** The range of Minecraft's {@code scale} attribute. */
     public static final double MIN_SCALE = 0.0625;
     public static final double MAX_SCALE = 16;
+    /** Default scale multiplier when a player looks at an NPC with {@code scale_up_when_looking}. */
+    public static final double DEFAULT_LOOK_SCALE = 1.2;
+    /** Default maximum distance (in blocks) at which looking at an NPC scales it up. */
+    public static final double DEFAULT_LOOK_SCALE_DISTANCE = 12;
+    public static final double MAX_LOOK_SCALE_DISTANCE = HologramData.MAX_VIEW_DISTANCE;
     /** Space between the top of the NPC and the bottom of its name. */
     static final double NAME_GAP = 0.15;
     /** A profile name may be at most 16 characters. */
@@ -54,6 +59,9 @@ public final class NpcData {
     private volatile boolean glowing;
     private volatile TeamColor glowColor = TeamColor.WHITE;
     private volatile double scale = 1;
+    private volatile boolean scaleUpWhenLooking;
+    private volatile double lookScaleMultiplier = DEFAULT_LOOK_SCALE;
+    private volatile double lookScaleDistance = DEFAULT_LOOK_SCALE_DISTANCE;
     private volatile NpcPose pose = NpcPose.STANDING;
     private volatile boolean showInTab;
     private volatile Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> equipmentSpecs = Map.of();
@@ -187,6 +195,38 @@ public final class NpcData {
     public void scale(double value) {
         scale = Math.clamp(value, MIN_SCALE, MAX_SCALE);
         placeNameTag();
+    }
+
+    /** True if the NPC scales up per-viewer when a 1.20.5+ player looks directly at it. */
+    public boolean scaleUpWhenLooking() {
+        return scaleUpWhenLooking;
+    }
+
+    public void scaleUpWhenLooking(boolean value) {
+        scaleUpWhenLooking = value;
+    }
+
+    /** Multiplier applied to {@link #scale()} while a player looks at the NPC (default 1.2). */
+    public double lookScaleMultiplier() {
+        return lookScaleMultiplier;
+    }
+
+    public void lookScaleMultiplier(double value) {
+        lookScaleMultiplier = Math.clamp(value, MIN_SCALE, MAX_SCALE);
+    }
+
+    /** Maximum distance in blocks at which looking at the NPC scales it up. */
+    public double lookScaleDistance() {
+        return lookScaleDistance;
+    }
+
+    public void lookScaleDistance(double value) {
+        lookScaleDistance = Math.clamp(value, 1, MAX_LOOK_SCALE_DISTANCE);
+    }
+
+    /** Effective scale shown to a 1.20.5+ viewer while they are looking at this NPC. */
+    public double lookedScale() {
+        return Math.clamp(scale * lookScaleMultiplier, MIN_SCALE, MAX_SCALE);
     }
 
     /** How a player NPC stands; always {@link NpcPose#STANDING} for other entities. */
@@ -342,6 +382,9 @@ public final class NpcData {
         copy.glowing = glowing;
         copy.glowColor = glowColor;
         copy.scale = scale;
+        copy.scaleUpWhenLooking = scaleUpWhenLooking;
+        copy.lookScaleMultiplier = lookScaleMultiplier;
+        copy.lookScaleDistance = lookScaleDistance;
         copy.showInTab = showInTab;
         copy.equipmentSpecs = equipmentSpecs;
         copy.viewDistance = viewDistance;
@@ -379,8 +422,13 @@ public final class NpcData {
      * clients that draw the scale.
      */
     public double height(boolean scaled) {
+        return heightForScale(scaled ? scale : 1);
+    }
+
+    /** How tall the NPC looks at an explicit {@code effectiveScale}. */
+    public double heightForScale(double effectiveScale) {
         double height = isPlayer() ? pose.playerHeight() : type.height();
-        return scaled ? height * scale : height;
+        return height * effectiveScale;
     }
 
     /** Puts the name just above the top of the NPC as clients that draw its scale see it. */

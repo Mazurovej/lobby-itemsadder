@@ -60,6 +60,12 @@ class CommandTreeTest {
             // The command from the bug report: "type" was both the subcommand and its argument.
             var result = commands.execute(console, "npc type guide villager");
             assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS, result.getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc scale_up_when_looking guide").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc scale_up_when_looking guide 1.35 16").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc scale_up_when_looking guide false").getType());
         } finally {
             stop.run();
         }

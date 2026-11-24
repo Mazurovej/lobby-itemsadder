@@ -163,7 +163,7 @@ hologram-imported-name-tag: "<prefix><green>The hologram linked to <white><npc><
 hologram-import-nothing: "<prefix><yellow>Nothing to import. Put FancyHolograms' holograms.yml in <white><file></white> and try again."
 
 # ---------------- NPCs (/npc, see docs/npcs.md) ----------------
-npc-usage: "<prefix><gray>Usage: <white>/npc create <name> | remove | copy | list | nearby | info | teleport | move_here | move_to | type | skin | displayname | name | equipment | glowing | turn_to_player | turn_to_player_distance | visibility_distance | interaction_cooldown | permission | action | import"
+npc-usage: "<prefix><gray>Usage: <white>/npc create <name> | remove | copy | list | nearby | info | teleport | move_here | move_to | type | skin | displayname | name | equipment | glowing | scale | scale_up_when_looking | turn_to_player | turn_to_player_distance | visibility_distance | interaction_cooldown | permission | action | import"
 # <name> = the NPC's name
 npc-created: "<prefix><green>Created the NPC <white><name></white>."
 npc-exists: "<prefix><red>There is already an NPC called <name>."

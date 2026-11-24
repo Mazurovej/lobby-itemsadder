@@ -14,11 +14,14 @@ import net.minestom.server.entity.Metadata;
 import net.minestom.server.entity.MetadataDef;
 import net.minestom.server.entity.Player;
 import net.minestom.server.entity.PlayerSkin;
+import net.minestom.server.entity.attribute.Attribute;
 import net.minestom.server.item.ItemStack;
 import net.minestom.server.item.Material;
 import net.minestom.server.network.packet.server.ServerPacket;
+import net.minestom.server.network.packet.server.play.EntityAttributesPacket;
 import net.minestom.server.network.packet.server.play.EntityHeadLookPacket;
 import net.minestom.server.network.packet.server.play.EntityRotationPacket;
+import net.minestom.server.network.packet.server.play.EntityTeleportPacket;
 
 import java.util.ArrayList;
 import java.util.EnumMap;
@@ -27,14 +30,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * One NPC, shown to the players near it with packets only: the body (a player with a skin, or any other
  * entity) and its name tag hologram above it.
  *
  * <p>Body and name are one object, so a click on either is a click on the NPC, and both share one render
- * per group of viewers. Turning towards players is done per viewer with two small rotation packets and
- * never re-renders anything.
+ * per group of viewers. Turning towards players and scaling up while looked at are done per viewer with
+ * small packets and never re-render or split viewer groups.
  *
  * <p>Viewers are grouped by what their client can draw, on top of the name tag's own groups:
  * <ul>
@@ -60,6 +64,11 @@ public final class Npc implements ClientObject {
     private static final long PACK_MASK = 0xFFFFFFFFL;
     /** The seat is the last part, so adding or removing it never shifts the body or the name lines. */
     private static final int BODY = 0;
+    /** On 1.19.4+ clients with a non-empty name tag, part 1 is the single text display above the body. */
+    private static final int NAME_TAG = 1;
+    /** Comfort padding around the entity hitbox so aiming at arms/hat triggers look-scaling smoothly. */
+    private static final double LOOK_PADDING_XZ = 0.15;
+    private static final double LOOK_PADDING_Y = 0.10;
     /** Entity flags: 0x20 is "invisible". */
     private static final byte INVISIBLE = 0x20;
     /** Armor stand flags: 0x01 small, 0x08 no base plate, 0x10 marker (no hitbox). */
@@ -75,10 +84,18 @@ public final class Npc implements ClientObject {
     record Key(HologramText.Variant text, boolean scaled) {
     }
 
+    /** Last overridden look-scale sent to a viewer and the NPC data revision it was computed against. */
+    private record ScaleState(double scale, int revision) {
+    }
+
     private final NpcData data;
     private final Hologram.Services services;
     /** The rotation each viewer last got, packed into a long, so unchanged turns are not sent again. */
     private final Map<UUID, Long> lastLook = new ConcurrentHashMap<>();
+    /** Viewers whose scale is currently overridden by {@code scale_up_when_looking}. */
+    private final Map<UUID, ScaleState> lastLookScale = new ConcurrentHashMap<>();
+    /** Bumped on admin edits so active look-scale overrides re-apply cleanly after content updates. */
+    private final AtomicInteger configRevision = new AtomicInteger();
 
     public Npc(NpcData data, Hologram.Services services) {
         this.data = data;
@@ -88,6 +105,11 @@ public final class Npc implements ClientObject {
     /** The stored NPC behind this one. */
     public NpcData data() {
         return data;
+    }
+
+    /** Marks the NPC's settings as changed so per-viewer scale overrides re-sync on the next refresh. */
+    void onDataChanged() {
+        configRevision.incrementAndGet();
     }
 
     @Override
@@ -218,41 +240,192 @@ public final class Npc implements ClientObject {
 
     @Override
     public boolean hasViewerPackets() {
-        return data.turnToPlayer();
+        return data.turnToPlayer() || data.scaleUpWhenLooking() || !lastLookScale.isEmpty();
     }
 
     /**
-     * Turns the NPC towards this viewer when they are near enough, and back to how it was placed when
-     * they walk away. Sent only when the direction changed by more than {@link #TURN_STEP_DEGREES}.
+     * Sends per-viewer rotation packets (when {@code turn_to_player} is on) and per-viewer scale
+     * attribute + name-tag height updates (when {@code scale_up_when_looking} is on). Unchanged state
+     * sends nothing and allocates no packet list.
      */
     @Override
     public List<ServerPacket> viewerPackets(Player viewer, List<Integer> entityIds, boolean justSpawned) {
         if (entityIds.isEmpty()) {
             return List.of();
         }
-        Pos npc = data.position();
-        Pos target = viewer.getPosition();
-        float yaw = npc.yaw();
-        float pitch = npc.pitch();
-        if (npc.distanceSquared(target) <= data.turnDistance() * data.turnDistance()) {
-            double dx = target.x() - npc.x();
-            double dz = target.z() - npc.z();
-            double dy = (target.y() + viewer.getEyeHeight()) - (npc.y() + data.type().eyeHeight());
-            yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
-            pitch = (float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
-        }
-        long packed = pack(round(yaw), round(pitch));
-        Long previous = lastLook.put(viewer.getUuid(), packed);
-        if (!justSpawned && previous != null && previous == packed) {
-            return List.of();
-        }
         int body = entityIds.get(BODY);
-        return List.of(new EntityRotationPacket(body, yaw, pitch, true), new EntityHeadLookPacket(body, yaw));
+        List<ServerPacket> packets = null;
+
+        if (data.turnToPlayer()) {
+            Pos npc = data.position();
+            Pos target = viewer.getPosition();
+            float yaw = npc.yaw();
+            float pitch = npc.pitch();
+            if (npc.distanceSquared(target) <= data.turnDistance() * data.turnDistance()) {
+                double dx = target.x() - npc.x();
+                double dz = target.z() - npc.z();
+                double dy = (target.y() + viewer.getEyeHeight()) - (npc.y() + data.type().eyeHeight());
+                yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+                pitch = (float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
+            }
+            long packed = pack(round(yaw), round(pitch));
+            Long previous = lastLook.put(viewer.getUuid(), packed);
+            if (justSpawned || previous == null || previous != packed) {
+                packets = new ArrayList<>(4);
+                packets.add(new EntityRotationPacket(body, yaw, pitch, true));
+                packets.add(new EntityHeadLookPacket(body, yaw));
+            }
+        }
+
+        UUID viewerId = viewer.getUuid();
+        ScaleState previousScale = lastLookScale.get(viewerId);
+        if (data.scaleUpWhenLooking() || previousScale != null) {
+            boolean canScale = data.type().shouldSendAttributes() && services.scaleSupported().test(viewer);
+            if (data.scaleUpWhenLooking() && canScale) {
+                double probeScale = previousScale != null ? Math.max(data.scale(), previousScale.scale()) : data.scale();
+                double targetScale = isLookingAt(viewer, probeScale) ? data.lookedScale() : data.scale();
+                if (Double.compare(targetScale, data.scale()) != 0) {
+                    int rev = configRevision.get();
+                    if (justSpawned || previousScale == null
+                            || Double.compare(previousScale.scale(), targetScale) != 0
+                            || previousScale.revision() != rev) {
+                        lastLookScale.put(viewerId, new ScaleState(targetScale, rev));
+                        if (packets == null) {
+                            packets = new ArrayList<>(2);
+                        }
+                        appendScalePackets(packets, viewer, entityIds, body, targetScale);
+                    }
+                } else if (lastLookScale.remove(viewerId) != null) {
+                    if (packets == null) {
+                        packets = new ArrayList<>(2);
+                    }
+                    appendScalePackets(packets, viewer, entityIds, body, data.scale());
+                }
+            } else if (lastLookScale.remove(viewerId) != null && canScale) {
+                if (packets == null) {
+                    packets = new ArrayList<>(2);
+                }
+                appendScalePackets(packets, viewer, entityIds, body, data.scale());
+            }
+        }
+
+        return packets == null ? List.of() : packets;
+    }
+
+    private void appendScalePackets(List<ServerPacket> packets, Player viewer, List<Integer> entityIds,
+                                    int bodyEntityId, double scale) {
+        packets.add(new EntityAttributesPacket(bodyEntityId,
+                List.of(new EntityAttributesPacket.Property(Attribute.SCALE, scale, List.of()))));
+        if (!data.nameTag().lines().isEmpty()
+                && !services.legacyClient().test(viewer)
+                && entityIds.size() > NAME_TAG) {
+            Pos npc = data.position();
+            Pos namePos = new Pos(npc.x(), npc.y() + data.heightForScale(scale) + NpcData.NAME_GAP, npc.z());
+            packets.add(new EntityTeleportPacket(entityIds.get(NAME_TAG), namePos, Vec.ZERO, 0, false));
+        }
+    }
+
+    /**
+     * Exact ray-AABB intersection from the viewer's eyes along their look vector against this NPC's
+     * hitbox at {@code effectiveScale}. Zero heap allocations.
+     */
+    boolean isLookingAt(Player viewer, double effectiveScale) {
+        Pos npc = data.position();
+        Pos viewerPos = viewer.getPosition();
+        double maxDist = Math.min(data.lookScaleDistance(), data.viewDistance());
+        double height = data.heightForScale(effectiveScale);
+        double halfW = Math.max(0.4, data.type().width()) * effectiveScale * 0.5 + LOOK_PADDING_XZ;
+
+        double eyeX = viewerPos.x();
+        double eyeY = viewerPos.y() + viewer.getEyeHeight();
+        double eyeZ = viewerPos.z();
+
+        double toX = npc.x() - eyeX;
+        double toY = (npc.y() + height * 0.5) - eyeY;
+        double toZ = npc.z() - eyeZ;
+        double boundRadius = halfW * 1.5 + height * 0.5 + LOOK_PADDING_Y;
+        double maxCheck = maxDist + boundRadius;
+        if (toX * toX + toY * toY + toZ * toZ > maxCheck * maxCheck) {
+            return false;
+        }
+
+        double yawRad = Math.toRadians(viewerPos.yaw());
+        double pitchRad = Math.toRadians(viewerPos.pitch());
+        double cosPitch = Math.cos(pitchRad);
+        double dirX = -cosPitch * Math.sin(yawRad);
+        double dirY = -Math.sin(pitchRad);
+        double dirZ = cosPitch * Math.cos(yawRad);
+
+        // Fast reject when the NPC is behind the player's camera.
+        if (toX * dirX + toY * dirY + toZ * dirZ < -boundRadius) {
+            return false;
+        }
+
+        double tMin = 0.0;
+        double tMax = maxDist;
+
+        // X slab
+        if (Math.abs(dirX) < 1e-9) {
+            if (eyeX < npc.x() - halfW || eyeX > npc.x() + halfW) {
+                return false;
+            }
+        } else {
+            double inv = 1.0 / dirX;
+            double t1 = (npc.x() - halfW - eyeX) * inv;
+            double t2 = (npc.x() + halfW - eyeX) * inv;
+            if (t1 > t2) {
+                double tmp = t1;
+                t1 = t2;
+                t2 = tmp;
+            }
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            if (tMin > tMax) return false;
+        }
+
+        // Y slab
+        double minY = npc.y();
+        double maxY = npc.y() + height + LOOK_PADDING_Y;
+        if (Math.abs(dirY) < 1e-9) {
+            if (eyeY < minY || eyeY > maxY) {
+                return false;
+            }
+        } else {
+            double inv = 1.0 / dirY;
+            double t1 = (minY - eyeY) * inv;
+            double t2 = (maxY - eyeY) * inv;
+            if (t1 > t2) {
+                double tmp = t1;
+                t1 = t2;
+                t2 = tmp;
+            }
+            if (t1 > tMin) tMin = t1;
+            if (t2 < tMax) tMax = t2;
+            if (tMin > tMax) return false;
+        }
+
+        // Z slab
+        if (Math.abs(dirZ) < 1e-9) {
+            return eyeZ >= npc.z() - halfW && eyeZ <= npc.z() + halfW;
+        }
+        double inv = 1.0 / dirZ;
+        double t1 = (npc.z() - halfW - eyeZ) * inv;
+        double t2 = (npc.z() + halfW - eyeZ) * inv;
+        if (t1 > t2) {
+            double tmp = t1;
+            t1 = t2;
+            t2 = tmp;
+        }
+        if (t1 > tMin) tMin = t1;
+        if (t2 < tMax) tMax = t2;
+        return tMin <= tMax;
     }
 
     @Override
     public void viewerGone(Player viewer) {
-        lastLook.remove(viewer.getUuid());
+        UUID id = viewer.getUuid();
+        lastLook.remove(id);
+        lastLookScale.remove(id);
     }
 
     private static float round(float degrees) {

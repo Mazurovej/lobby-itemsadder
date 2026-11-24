@@ -12,8 +12,9 @@ import java.util.stream.Collectors;
 
 /**
  * The {@code /npc} subcommands about how an NPC looks, with FancyNpcs' names: {@code glowing <npc>
- * [colour|disabled]}, {@code scale <npc> <factor>}, {@code show_in_tab <npc>} and {@code attribute <npc>
- * set pose <pose>}, plus the shorter {@code pose <npc> <pose>}.
+ * [colour|disabled]}, {@code scale <npc> <factor>}, {@code scale_up_when_looking <npc> [true|false|factor]
+ * [distance]}, {@code show_in_tab <npc>} and {@code attribute <npc> set pose <pose>}, plus the shorter
+ * {@code pose <npc> <pose>}.
  */
 final class NpcLookCommands {
 
@@ -26,6 +27,7 @@ final class NpcLookCommands {
     void addTo(Command parent, ArgumentWord npc) {
         parent.addSubcommand(glowing(npc));
         parent.addSubcommand(scale(npc));
+        parent.addSubcommand(scaleUpWhenLooking(npc));
         parent.addSubcommand(showInTab(npc));
         parent.addSubcommand(pose(npc));
         parent.addSubcommand(attribute(npc));
@@ -83,6 +85,72 @@ final class NpcLookCommands {
             }
         }, npc, factor);
         return command;
+    }
+
+    /**
+     * Scales the NPC up per-viewer when a player looks at it:
+     * {@code /npc scale_up_when_looking <npc> [true|false|toggle|disabled|<factor>] [distance]}.
+     */
+    private Command scaleUpWhenLooking(ArgumentWord npc) {
+        Command command = new Command("scale_up_when_looking", "scaleupwhenlooking", "look_scale", "lookscale");
+        command.setDefaultExecutor((sender, context) -> support.usage(sender));
+        ArgumentWord value = ArgumentType.Word("value");
+        value.setSuggestionCallback((sender, context, suggestion) -> {
+            for (String option : new String[]{"true", "false", "toggle", "disabled", "1.1", "1.2", "1.3", "1.5"}) {
+                suggestion.addEntry(new SuggestionEntry(option));
+            }
+        });
+        var distance = ArgumentType.Double("distance").min(1.0).max(NpcData.MAX_LOOK_SCALE_DISTANCE);
+        command.addSyntax((sender, context) -> scaleUpWhenLooking(sender, context.get(npc), null, null), npc);
+        command.addSyntax((sender, context) -> scaleUpWhenLooking(sender, context.get(npc), context.get(value), null),
+                npc, value);
+        command.addSyntax((sender, context) -> scaleUpWhenLooking(sender, context.get(npc), context.get(value),
+                context.get(distance)), npc, value, distance);
+        return command;
+    }
+
+    private void scaleUpWhenLooking(CommandSender sender, String npcName, String value, Double distance) {
+        NpcData data = support.found(sender, npcName);
+        if (data == null) {
+            return;
+        }
+        Boolean wanted = NpcCommandSupport.state(value, data.scaleUpWhenLooking());
+        if (wanted != null) {
+            data.scaleUpWhenLooking(wanted);
+            if (distance != null) {
+                data.lookScaleDistance(distance);
+            }
+            support.changed(sender, data, "scale_up_when_looking", describeLookScale(data));
+            return;
+        }
+        double factor;
+        try {
+            factor = Double.parseDouble(value);
+        } catch (NumberFormatException e) {
+            support.invalid(sender, "scale_up_when_looking", "not true, false, toggle or a number",
+                    "true, false, toggle, disabled, or a scale multiplier (" + NpcData.MIN_SCALE + " to "
+                            + (int) NpcData.MAX_SCALE + ")");
+            return;
+        }
+        if (!Double.isFinite(factor) || factor < NpcData.MIN_SCALE || factor > NpcData.MAX_SCALE) {
+            support.invalid(sender, "scale_up_when_looking", "out of range",
+                    "a scale multiplier between " + NpcData.MIN_SCALE + " and " + (int) NpcData.MAX_SCALE);
+            return;
+        }
+        data.lookScaleMultiplier(factor);
+        if (distance != null) {
+            data.lookScaleDistance(distance);
+        }
+        data.scaleUpWhenLooking(true);
+        support.changed(sender, data, "scale_up_when_looking", describeLookScale(data));
+    }
+
+    private static String describeLookScale(NpcData data) {
+        if (!data.scaleUpWhenLooking()) {
+            return "off";
+        }
+        return data.lookScaleMultiplier() + "x within " + (int) data.lookScaleDistance()
+                + " blocks (1.20.5+ clients)";
     }
 
     private Command showInTab(ArgumentWord npc) {

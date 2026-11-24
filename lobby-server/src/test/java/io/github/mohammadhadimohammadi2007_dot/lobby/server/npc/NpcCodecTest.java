@@ -42,6 +42,9 @@ class NpcCodecTest {
         data.glowing(true);
         data.glowColor(TeamColor.GOLD);
         data.scale(1.5);
+        data.scaleUpWhenLooking(true);
+        data.lookScaleMultiplier(1.3);
+        data.lookScaleDistance(16);
         data.pose(NpcPose.SITTING);
         data.showInTab(true);
         for (EquipmentSlot slot : List.of(EquipmentSlot.MAIN_HAND, EquipmentSlot.OFF_HAND, EquipmentSlot.HELMET,
@@ -87,6 +90,14 @@ class NpcCodecTest {
         assertTrue(loaded.glowing());
         assertEquals(TeamColor.GOLD, loaded.glowColor());
         assertEquals(1.5, loaded.scale());
+        assertTrue(loaded.scaleUpWhenLooking());
+        assertEquals(1.3, loaded.lookScaleMultiplier());
+        assertEquals(16, loaded.lookScaleDistance());
+        assertEquals(1.95, loaded.lookedScale(), 1e-9);
+        NpcData copied = loaded.copy("bedwars-2");
+        assertTrue(copied.scaleUpWhenLooking());
+        assertEquals(1.3, copied.lookScaleMultiplier());
+        assertEquals(16, copied.lookScaleDistance());
         assertEquals(NpcPose.SITTING, loaded.pose());
         assertTrue(loaded.showInTab());
         assertEquals(data.equipment(), loaded.equipment(), "every slot FancyNpcs has, and the rest");

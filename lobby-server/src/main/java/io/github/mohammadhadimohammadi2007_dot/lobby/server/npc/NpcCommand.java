@@ -28,9 +28,9 @@ import java.util.stream.Collectors;
 
 /**
  * {@code /npc}, with the subcommand names of FancyNpcs (create, remove, copy, list, nearby, info,
- * teleport, move_here, move_to, type, skin, displayname, equipment, glowing, scale, show_in_tab,
- * attribute, turn_to_player, turn_to_player_distance, visibility_distance, interaction_cooldown, action),
- * {@code pose}, plus {@code name} for the
+ * teleport, move_here, move_to, type, skin, displayname, equipment, glowing, scale, scale_up_when_looking,
+ * show_in_tab, attribute, turn_to_player, turn_to_player_distance, visibility_distance,
+ * interaction_cooldown, action), {@code pose}, plus {@code name} for the
  * multi-line name tag, {@code permission} and {@code import}. See docs/npcs.md.
  */
 public final class NpcCommand extends Command {
@@ -192,7 +192,10 @@ public final class NpcCommand extends Command {
                 Messages.text("skin", npc.isPlayer() ? npc.skin().describe() : "-"),
                 Messages.text("turn", npc.turnToPlayer() ? "yes, within " + (int) npc.turnDistance() + " blocks" : "no"),
                 Messages.text("glowing", npc.glowing() ? NpcCodec.colorName(npc.glowColor()) : "no"),
-                Messages.text("scale", npc.scale()),
+                Messages.text("scale", npc.scaleUpWhenLooking()
+                        ? npc.scale() + " (" + npc.lookScaleMultiplier() + "x when looked at, "
+                                + (int) npc.lookScaleDistance() + "m)"
+                        : npc.scale()),
                 Messages.text("pose", npc.pose().configName()),
                 Messages.text("tab", npc.showInTab() ? "yes" : "no"),
                 Messages.text("lines", npc.nameTag().lines().size()),

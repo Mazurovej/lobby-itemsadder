@@ -56,6 +56,9 @@ public final class NpcCodec implements DataCodec<NpcData> {
             data.glowColor(glowColor);
         }
         data.scale(node.node("scale").getDouble(1));
+        data.scaleUpWhenLooking(node.node("scale-up-when-looking").getBoolean(false));
+        data.lookScaleMultiplier(node.node("look-scale").getDouble(NpcData.DEFAULT_LOOK_SCALE));
+        data.lookScaleDistance(node.node("look-scale-distance").getDouble(NpcData.DEFAULT_LOOK_SCALE_DISTANCE));
         String poseName = node.node("pose").getString("standing");
         NpcPose pose = NpcPose.fromName(poseName);
         if (pose == null || !data.pose(pose)) {
@@ -103,6 +106,9 @@ public final class NpcCodec implements DataCodec<NpcData> {
         node.node("glowing").set(data.glowing());
         node.node("glow-color").set(colorName(data.glowColor()));
         node.node("scale").set(data.scale());
+        node.node("scale-up-when-looking").set(data.scaleUpWhenLooking());
+        node.node("look-scale").set(data.lookScaleMultiplier());
+        node.node("look-scale-distance").set(data.lookScaleDistance());
         if (data.isPlayer()) {
             node.node("pose").set(data.pose().configName());
             node.node("show-in-tab").set(data.showInTab());

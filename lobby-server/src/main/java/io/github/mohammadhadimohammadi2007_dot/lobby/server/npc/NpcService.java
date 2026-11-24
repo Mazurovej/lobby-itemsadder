@@ -179,6 +179,10 @@ public final class NpcService implements ClientObjectClicks.Handler, NameTags {
     public synchronized void changed(NpcData data) {
         classify(data);
         joinTeam(data);
+        Npc npc = npcs.get(data.name());
+        if (npc != null) {
+            npc.onDataChanged();
+        }
         renderer.invalidate(Npc.OBJECT_PREFIX + data.name());
         save();
     }

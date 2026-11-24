@@ -258,6 +258,85 @@ class NpcTierEnvTest {
     }
 
     @Test
+    void scaleUpWhenLookingScalesForModernViewerOnlyAndResetsWhenLookingAwayOrDisabled(Env env) throws Exception {
+        InstanceContainer map = (InstanceContainer) env.createFlatInstance();
+        Setup setup = start(env, map);
+        UUID newerId = UUID.randomUUID();
+        scaled.add(newerId);
+        TestConnection newer = env.createConnection(new GameProfile(newerId, "Newer"));
+        // Stand at +x (3.5, 41, 0.5) facing -x (yaw +90) straight at NPC_AT (0.5, 41, 0.5).
+        net.minestom.server.entity.Player newerPlayer = newer.connect(map, NPC_AT.add(3, 0, 0).withView(90f, 0f));
+        TestConnection older = env.createConnection(new GameProfile(UUID.randomUUID(), "Older"));
+        older.connect(map, NPC_AT.add(3, 0, 0).withView(90f, 0f));
+
+        NpcData npc = setup.npcs().create("bedwars", NPC_AT);
+        assertNotNull(npc);
+        npc.scaleUpWhenLooking(true);
+        npc.lookScaleMultiplier(1.25);
+        npc.lookScaleDistance(10);
+        setup.npcs().changed(npc);
+
+        Collector<ServerPacket> toNewer = newer.trackIncoming(ServerPacket.class);
+        Collector<ServerPacket> toOlder = older.trackIncoming(ServerPacket.class);
+
+        setup.renderer().refreshNow();
+
+        List<ServerPacket> newerPackets = toNewer.collect();
+        int body = bodyId(newerPackets, npc);
+        EntityAttributesPacket scaledUp = newerPackets.stream().filter(EntityAttributesPacket.class::isInstance)
+                .map(EntityAttributesPacket.class::cast).filter(p -> p.entityId() == body).findFirst().orElseThrow();
+        assertEquals(Attribute.SCALE, scaledUp.properties().getFirst().attribute());
+        assertEquals(1.25, scaledUp.properties().getFirst().value(), 1e-6);
+        // Name tag teleports up to match the scaled-up height.
+        var nameMove = newerPackets.stream()
+                .filter(net.minestom.server.network.packet.server.play.EntityTeleportPacket.class::isInstance)
+                .map(net.minestom.server.network.packet.server.play.EntityTeleportPacket.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals(41 + 1.8 * 1.25 + NpcData.NAME_GAP, nameMove.position().y(), 1e-6);
+        // turn_to_player is off, so no rotation packets are sent.
+        assertFalse(newerPackets.stream().anyMatch(
+                net.minestom.server.network.packet.server.play.EntityRotationPacket.class::isInstance));
+        // Older (< 1.20.5) client receives no scale attribute.
+        assertFalse(toOlder.collect().stream().anyMatch(EntityAttributesPacket.class::isInstance));
+
+        // Still looking: steady state sends nothing.
+        Collector<ServerPacket> quiet = newer.trackIncoming(ServerPacket.class);
+        setup.renderer().refreshNow();
+        assertEquals(List.of(), quiet.collect(), "unchanged look state sends no packets");
+
+        // Turn away (yaw -90 = facing +x, away from NPC): scale and name tag reset to 1.0.
+        newerPlayer.teleport(NPC_AT.add(3, 0, 0).withView(-90f, 0f)).join();
+        Collector<ServerPacket> turnedAway = newer.trackIncoming(ServerPacket.class);
+        setup.renderer().refreshNow();
+        List<ServerPacket> resetPackets = turnedAway.collect();
+        EntityAttributesPacket resetScale = resetPackets.stream().filter(EntityAttributesPacket.class::isInstance)
+                .map(EntityAttributesPacket.class::cast).filter(p -> p.entityId() == body).findFirst().orElseThrow();
+        assertEquals(1.0, resetScale.properties().getFirst().value(), 1e-6);
+        var resetName = resetPackets.stream()
+                .filter(net.minestom.server.network.packet.server.play.EntityTeleportPacket.class::isInstance)
+                .map(net.minestom.server.network.packet.server.play.EntityTeleportPacket.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals(41 + 1.8 + NpcData.NAME_GAP, resetName.position().y(), 1e-6);
+
+        // Look straight at it from beyond lookScaleDistance (15 > 10 blocks): must not scale up.
+        newerPlayer.teleport(NPC_AT.add(15, 0, 0).withView(90f, 0f)).join();
+        Collector<EntityAttributesPacket> tooFar = newer.trackIncoming(EntityAttributesPacket.class);
+        setup.renderer().refreshNow();
+        assertEquals(List.of(), tooFar.collect(), "beyond lookScaleDistance does not scale up");
+
+        // Look at it again within range, then disable scale_up_when_looking: must still reset to 1.0.
+        newerPlayer.teleport(NPC_AT.add(4, 0, 0).withView(90f, 0f)).join();
+        setup.renderer().refreshNow();
+        npc.scaleUpWhenLooking(false);
+        setup.npcs().changed(npc);
+        Collector<EntityAttributesPacket> onDisable = newer.trackIncoming(EntityAttributesPacket.class);
+        setup.renderer().refreshNow();
+        List<EntityAttributesPacket> disabledPackets = onDisable.collect();
+        assertEquals(1, disabledPackets.size());
+        assertEquals(1.0, disabledPackets.getFirst().properties().getFirst().value(), 1e-6);
+    }
+
+    @Test
     void theGlowColourIsTheColourOfTheNpcsTeam(Env env) throws Exception {
         InstanceContainer map = (InstanceContainer) env.createFlatInstance();
         Setup setup = start(env, map);
