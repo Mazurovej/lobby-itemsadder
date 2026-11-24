@@ -44,6 +44,7 @@ final class TabListService {
 
     private final ClientTiers tiers;
     private final LobbyText text;
+    private final io.github.mohammadhadimohammadi2007_dot.lobby.server.player.PermissionService permissions;
     private final BiPredicate<Player, Player> hidden;
     private final Map<UUID, Name> names = new HashMap<>();
     private final Set<UUID> knowNames = new HashSet<>();
@@ -52,9 +53,12 @@ final class TabListService {
     private int namePackets;
 
     /** @param hidden true if the viewer (first) must never see the target (second) listed: a vanished player */
-    TabListService(ClientTiers tiers, LobbyText text, BiPredicate<Player, Player> hidden) {
+    TabListService(ClientTiers tiers, LobbyText text,
+                   io.github.mohammadhadimohammadi2007_dot.lobby.server.player.PermissionService permissions,
+                   BiPredicate<Player, Player> hidden) {
         this.tiers = tiers;
         this.text = text;
+        this.permissions = permissions;
         this.hidden = hidden;
     }
 
@@ -90,8 +94,9 @@ final class TabListService {
     private void names(TabConfig config, Collection<Player> online, TextCache cache) {
         List<Player> changed = new ArrayList<>();
         for (Player target : online) {
-            Name name = new Name(cache.about(config.nameFormat().template(false), target, false),
-                    cache.about(config.nameFormat().template(true), target, true));
+            Component modern = renderTabName(config.nameFormat().template(false), target, false, cache);
+            Component legacy = renderTabName(config.nameFormat().template(true), target, true, cache);
+            Name name = new Name(modern, legacy);
             if (Vanished.is(target)) {
                 // Only viewers who may see vanished players have them listed, so everyone who sees this sees the mark.
                 Component marker = text.message(MessageKey.VANISH_TAB_MARKER, (Player) null);
@@ -113,6 +118,31 @@ final class TabListService {
         if (!changed.isEmpty()) {
             known.forEach((group, viewers) -> sendNames(group, viewers, changed));
         }
+    }
+
+    private Component renderTabName(String template, Player target, boolean legacy, TextCache cache) {
+        if (template.isEmpty()) {
+            return Component.empty();
+        }
+        String rawPrefix = permissions.meta(target).prefix();
+        if (rawPrefix.isEmpty() || (!template.contains("<name>") && !template.contains("%player_name%"))) {
+            return cache.about(template, target, legacy);
+        }
+        Component parsedPrefix = cache.about("%luckperms_prefix%", target, false);
+        var nameColor = io.github.mohammadhadimohammadi2007_dot.lobby.server.placeholder.ComponentColors
+                .lastColor(rawPrefix, parsedPrefix);
+        if (nameColor == null && !template.contains("<name>")) {
+            return cache.about(template, target, legacy);
+        }
+        Component coloredName = nameColor != null
+                ? Component.text(target.getUsername(), nameColor)
+                : Component.text(target.getUsername());
+        String normalized = template.contains("%player_name%") ? template.replace("%player_name%", "<name>") : template;
+        Component rendered = text.placeholders().render(normalized, target,
+                net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.component("name", coloredName));
+        return legacy
+                ? io.github.mohammadhadimohammadi2007_dot.lobby.server.chat.render.ComponentTransforms.downsampleColors(rendered)
+                : rendered;
     }
 
     private void sendNames(Group group, List<Player> viewers, Collection<Player> targets) {

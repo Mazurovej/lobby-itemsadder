@@ -215,8 +215,11 @@ public final class BridgeService {
             return;
         }
         switch (message) {
-            case BridgeMessage.ClientVersion version ->
+            case BridgeMessage.ClientVersion version -> {
+                if (version.protocolVersion() > 0) {
                     capabilities.put(version.playerId(), new ClientCapabilities(version.protocolVersion(), true));
+                }
+            }
             case BridgeMessage.NetworkSnapshot snapshot -> networkState.update(snapshot);
             case BridgeMessage.ServerStatus status -> networkState.update(status);
             // The lobby has one local chat now; an older lobby may still relay chat, which is ignored.

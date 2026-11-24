@@ -55,6 +55,8 @@ public final class PlaceholderService {
     public void textPreprocessor(java.util.function.UnaryOperator<String> preprocessor) {
         this.textPreprocessor = preprocessor == null ? java.util.function.UnaryOperator.identity() : preprocessor;
         this.preprocessed.clear();
+        this.globalValues.clear();
+        this.playerValues.clear();
     }
 
     /** The registry, for adding namespaces. */
@@ -239,7 +241,7 @@ public final class PlaceholderService {
         }
         try {
             return switch (placeholder) {
-                case Placeholder.Constant constant -> Cached.of(constant.value(), constant.formatted(), Long.MAX_VALUE);
+                case Placeholder.Constant constant -> buildCached(constant.value(), constant.formatted(), Long.MAX_VALUE);
                 case Placeholder.Global global -> cached(globalValues, key, global.cacheTime().toMillis(),
                         () -> global.value().get(), global.formatted());
                 case Placeholder.PerPlayer perPlayer -> {
@@ -252,7 +254,7 @@ public final class PlaceholderService {
                 }
                 case Placeholder.Relational relational -> target == null || viewer == null
                         ? null
-                        : Cached.of(relational.value().apply(viewer, target), relational.formatted(), Long.MAX_VALUE);
+                        : buildCached(relational.value().apply(viewer, target), relational.formatted(), Long.MAX_VALUE);
             };
         } catch (RuntimeException e) {
             LOGGER.warn("Placeholder %{}% failed", key, e);
@@ -261,17 +263,25 @@ public final class PlaceholderService {
     }
 
     /** Returns a fresh cached value or computes it. {@code ttlMillis} -1 means "until invalidated". */
-    private static Cached cached(Map<String, Cached> cache, String key, long ttlMillis,
-                                 Supplier<String> compute, boolean formatted) {
+    private Cached cached(Map<String, Cached> cache, String key, long ttlMillis,
+                          Supplier<String> compute, boolean formatted) {
         long now = System.nanoTime();
         Cached current = cache.get(key);
         if (current != null && current.expiresAtNanos() > now) {
             return current;
         }
         long expires = ttlMillis < 0 ? Long.MAX_VALUE : now + ttlMillis * NANOS_PER_MILLI;
-        Cached fresh = Cached.of(compute.get(), formatted, expires);
+        Cached fresh = buildCached(compute.get(), formatted, expires);
         cache.put(key, fresh);
         return fresh;
+    }
+
+    private Cached buildCached(String value, boolean formatted, long expiresAtNanos) {
+        String text = value == null ? "" : value;
+        if (formatted && !text.isEmpty()) {
+            text = textPreprocessor.apply(text);
+        }
+        return Cached.of(text, formatted, expiresAtNanos);
     }
 
     /** Removes characters that could end a MiniMessage tag argument early. */

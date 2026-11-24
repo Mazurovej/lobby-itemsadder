@@ -67,7 +67,7 @@ public final class DisplayService {
         this.text = new TextCache(text, tiers);
         this.sidebar = new SidebarService(new SidebarPackets(teams), tiers, permissions);
         // Vanished players stay out of the tab list of everyone who may not see them.
-        this.tab = new TabListService(tiers, text, (viewer, target) -> Vanished.is(target)
+        this.tab = new TabListService(tiers, text, permissions, (viewer, target) -> Vanished.is(target)
                 && !permissions.hasPermission(viewer, Permissions.VANISH_SEE));
         this.playerTeams = new PlayerTeams(teams, permissions);
         this.unlimitedNameTags = new UnlimitedNameTags(text, permissions, protocolOf);
@@ -81,6 +81,9 @@ public final class DisplayService {
             if (event.isFirstSpawn()) {
                 bars.scheduleJoinTitle(config.current().display().bars().joinTitle(), event.getPlayer(), text,
                         board::execute);
+            } else {
+                UUID playerId = event.getPlayer().getUuid();
+                board.execute(() -> unlimitedNameTags.remount(playerId));
             }
         });
         node.addListener(PlayerDisconnectEvent.class, event -> {

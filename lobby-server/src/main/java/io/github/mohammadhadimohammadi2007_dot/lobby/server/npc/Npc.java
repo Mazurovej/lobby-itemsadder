@@ -320,7 +320,7 @@ public final class Npc implements ClientObject {
                 && !services.legacyClient().test(viewer)
                 && entityIds.size() > NAME_TAG) {
             Pos npc = data.position();
-            Pos namePos = new Pos(npc.x(), npc.y() + data.heightForScale(scale) + NpcData.NAME_GAP, npc.z());
+            Pos namePos = new Pos(npc.x(), npc.y() + data.heightForScale(scale) + data.nameOffset(), npc.z());
             packets.add(new EntityTeleportPacket(entityIds.get(NAME_TAG), namePos, Vec.ZERO, 0, false));
         }
     }

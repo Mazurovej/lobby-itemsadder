@@ -57,6 +57,9 @@ public final class WorldLoader {
     public static LobbyWorld load(LobbyConfig.World settings, Pos spawn) {
         long startNanos = System.nanoTime();
         long memoryBefore = usedMemory();
+        // Register vanilla block-entity handlers (skulls, signs, banners...) before loading chunks so
+        // Minestom sends their NBT (like player head textures) instead of stripping it with Dummy handlers.
+        WorldBlockHandlers.registerAll();
 
         WorldSource source = WorldSource.detect(Path.of(settings.path()), settings.convertAnvilToPolar());
         InstanceContainer instance = MinecraftServer.getInstanceManager().createInstanceContainer();
@@ -92,6 +95,7 @@ public final class WorldLoader {
                     Math.max(settings.preloadRadius(), settings.viewDistance() + 1), plan.reason());
         }
         preload(instance, plan.chunks());
+        WorldBlockHandlers.normalizeBlockEntities(instance);
 
         boolean lightComputed = false;
         if (needsLighting(instance)) {

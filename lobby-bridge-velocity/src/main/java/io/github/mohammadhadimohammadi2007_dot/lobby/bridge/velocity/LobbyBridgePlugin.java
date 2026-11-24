@@ -397,7 +397,10 @@ public final class LobbyBridgePlugin {
     private int clientProtocol(Player player) {
         if (viaVersion) {
             try {
-                return ViaVersionHook.clientProtocol(player.getUniqueId());
+                int version = ViaVersionHook.clientProtocol(player.getUniqueId());
+                if (version > 0) {
+                    return version;
+                }
             } catch (RuntimeException e) {
                 logger.debug("ViaVersion did not know {}, using Velocity's version", player.getUsername(), e);
             } catch (LinkageError e) {

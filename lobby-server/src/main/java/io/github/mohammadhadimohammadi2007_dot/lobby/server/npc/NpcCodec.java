@@ -59,6 +59,7 @@ public final class NpcCodec implements DataCodec<NpcData> {
         data.scaleUpWhenLooking(node.node("scale-up-when-looking").getBoolean(false));
         data.lookScaleMultiplier(node.node("look-scale").getDouble(NpcData.DEFAULT_LOOK_SCALE));
         data.lookScaleDistance(node.node("look-scale-distance").getDouble(NpcData.DEFAULT_LOOK_SCALE_DISTANCE));
+        data.nameOffset(node.node("name-offset").getDouble(NpcData.NAME_GAP));
         String poseName = node.node("pose").getString("standing");
         NpcPose pose = NpcPose.fromName(poseName);
         if (pose == null || !data.pose(pose)) {
@@ -109,6 +110,7 @@ public final class NpcCodec implements DataCodec<NpcData> {
         node.node("scale-up-when-looking").set(data.scaleUpWhenLooking());
         node.node("look-scale").set(data.lookScaleMultiplier());
         node.node("look-scale-distance").set(data.lookScaleDistance());
+        node.node("name-offset").set(data.nameOffset());
         if (data.isPlayer()) {
             node.node("pose").set(data.pose().configName());
             node.node("show-in-tab").set(data.showInTab());

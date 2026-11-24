@@ -41,8 +41,10 @@ public final class NpcData {
     /** Default maximum distance (in blocks) at which looking at an NPC scales it up. */
     public static final double DEFAULT_LOOK_SCALE_DISTANCE = 12;
     public static final double MAX_LOOK_SCALE_DISTANCE = HologramData.MAX_VIEW_DISTANCE;
-    /** Space between the top of the NPC and the bottom of its name. */
+    /** Default space between the top of the NPC and the bottom of its name. */
     static final double NAME_GAP = 0.15;
+    public static final double MIN_NAME_OFFSET = -5.0;
+    public static final double MAX_NAME_OFFSET = 10.0;
     /** A profile name may be at most 16 characters. */
     private static final int MAX_PROFILE_NAME = 16;
     private static final String PROFILE_NAME_PREFIX = "npc";
@@ -62,6 +64,7 @@ public final class NpcData {
     private volatile boolean scaleUpWhenLooking;
     private volatile double lookScaleMultiplier = DEFAULT_LOOK_SCALE;
     private volatile double lookScaleDistance = DEFAULT_LOOK_SCALE_DISTANCE;
+    private volatile double nameOffset = NAME_GAP;
     private volatile NpcPose pose = NpcPose.STANDING;
     private volatile boolean showInTab;
     private volatile Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> equipmentSpecs = Map.of();
@@ -229,6 +232,17 @@ public final class NpcData {
         return Math.clamp(scale * lookScaleMultiplier, MIN_SCALE, MAX_SCALE);
     }
 
+    /** Vertical offset (in blocks) between the top of the NPC's head and its name tag. */
+    public double nameOffset() {
+        return nameOffset;
+    }
+
+    /** Changes the head-to-nametag offset and moves the name tag immediately. */
+    public void nameOffset(double value) {
+        nameOffset = Math.clamp(value, MIN_NAME_OFFSET, MAX_NAME_OFFSET);
+        placeNameTag();
+    }
+
     /** How a player NPC stands; always {@link NpcPose#STANDING} for other entities. */
     public NpcPose pose() {
         return pose;
@@ -385,6 +399,7 @@ public final class NpcData {
         copy.scaleUpWhenLooking = scaleUpWhenLooking;
         copy.lookScaleMultiplier = lookScaleMultiplier;
         copy.lookScaleDistance = lookScaleDistance;
+        copy.nameOffset(nameOffset);
         copy.showInTab = showInTab;
         copy.equipmentSpecs = equipmentSpecs;
         copy.viewDistance = viewDistance;
@@ -434,6 +449,6 @@ public final class NpcData {
     /** Puts the name just above the top of the NPC as clients that draw its scale see it. */
     private void placeNameTag() {
         Pos npc = position;
-        nameTag.position(new Pos(npc.x(), npc.y() + height(true) + NAME_GAP, npc.z()));
+        nameTag.position(new Pos(npc.x(), npc.y() + height(true) + nameOffset, npc.z()));
     }
 }

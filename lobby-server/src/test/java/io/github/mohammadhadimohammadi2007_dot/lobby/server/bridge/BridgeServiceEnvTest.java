@@ -165,6 +165,17 @@ class BridgeServiceEnvTest {
         assertFalse(BridgeService.atLeast("0.4.9", "0.5.0"));
     }
 
+    @Test
+    void invalidClientProtocolVersionIsIgnored(Env env) {
+        BridgeService bridge = new BridgeService(true);
+        Player player = env.createPlayer(env.createFlatInstance(), new Pos(0, 42, 0));
+
+        bridge.receive(BridgeCodec.encode(new BridgeMessage.ClientVersion(player.getUuid(), -1)), "test");
+        assertFalse(bridge.capabilities(player).legacy(), "unknown ViaVersion protocol (-1) must not mark client as legacy");
+        bridge.receive(BridgeCodec.encode(new BridgeMessage.ClientVersion(player.getUuid(), 0)), "test");
+        assertFalse(bridge.capabilities(player).legacy(), "protocol 0 must not mark client as legacy");
+    }
+
     private LobbyText text() throws Exception {
         ConfigManager config = new ConfigManager(dir);
         config.load();

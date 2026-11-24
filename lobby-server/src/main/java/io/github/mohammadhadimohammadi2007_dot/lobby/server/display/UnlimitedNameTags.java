@@ -104,6 +104,22 @@ final class UnlimitedNameTags {
         TagLook look = TagLook.of(config);
         for (Player target : online) {
             TagState state = tags.computeIfAbsent(target.getUuid(), ignored -> new TagState());
+            var targetInstance = target.getInstance();
+            var targetPos = target.getPosition();
+            int realPassengers = target.getPassengers().size();
+
+            // If the target changed instance or teleported cleanly, force a fresh mount for all viewers
+            // so clients whose player entity was respawned never leave the TextDisplay detached.
+            if (state.lastInstance != null && state.lastInstance != targetInstance) {
+                destroyForAll(state);
+            } else if (state.lastPos != null && state.lastPos.distanceSquared(targetPos) > 100.0) {
+                destroyForAll(state);
+            }
+            boolean passengersChanged = state.lastRealPassengers != realPassengers;
+            state.lastInstance = targetInstance;
+            state.lastPos = targetPos;
+            state.lastRealPassengers = realPassengers;
+
             boolean needText = refreshText || state.lastText == null;
             Component rendered = needText ? renderNameTag(config, target, textCache) : state.lastText;
             boolean sneaking = target.isSneaking();
@@ -115,7 +131,6 @@ final class UnlimitedNameTags {
             state.lastLook = look;
 
             Set<? extends Player> currentViewers = target.getViewers();
-            var targetPos = target.getPosition();
             double maxDistSq = config.viewDistance() * config.viewDistance();
 
             // 1. Despawn for viewers who can no longer see this player or moved out of nametag view-distance.
@@ -159,6 +174,12 @@ final class UnlimitedNameTags {
                 metaPacket = new EntityMetaDataPacket(state.entityId, metadata(rendered, sneaking, config));
                 PacketSendingUtils.sendGroupedPacket(state.viewers, metaPacket);
             }
+            // Re-send SetPassengersPacket to existing viewers if real passengers changed (e.g. hat/ride).
+            if (passengersChanged && !state.viewers.isEmpty()) {
+                SetPassengersPacket passengersPacket = new SetPassengersPacket(
+                        target.getEntityId(), passengerIds(target, state.entityId));
+                PacketSendingUtils.sendGroupedPacket(state.viewers, passengersPacket);
+            }
 
             // 4. Spawn + mount for newly added viewers (serialized once via sendGroupedPacket).
             if (newlyAdded != null) {
@@ -167,7 +188,7 @@ final class UnlimitedNameTags {
                 }
                 SpawnEntityPacket spawnPacket = new SpawnEntityPacket(
                         state.entityId, state.entityUuid, EntityType.TEXT_DISPLAY,
-                        target.getPosition(), 0f, 0, Vec.ZERO);
+                        targetPos, 0f, 0, Vec.ZERO);
                 SetPassengersPacket passengersPacket = new SetPassengersPacket(
                         target.getEntityId(), passengerIds(target, state.entityId));
                 PacketSendingUtils.sendGroupedPacket(newlyAdded, spawnPacket);
@@ -175,6 +196,14 @@ final class UnlimitedNameTags {
                 PacketSendingUtils.sendGroupedPacket(newlyAdded, passengersPacket);
                 state.viewers.addAll(newlyAdded);
             }
+        }
+    }
+
+    /** Forces a player's nametag to be re-spawned and re-mounted on the next refresh (e.g. after respawn/teleport). */
+    void remount(UUID playerId) {
+        TagState state = tags.get(playerId);
+        if (state != null) {
+            destroyForAll(state);
         }
     }
 
@@ -217,8 +246,11 @@ final class UnlimitedNameTags {
         }
         List<Component> renderedLines = new ArrayList<>(config.lines().size());
         var nameTag = Placeholder.component("name", coloredName);
+        var prefixTag = Placeholder.component("prefix", prefix);
+        var suffixTag = Placeholder.component("suffix", suffix);
         for (String line : config.lines()) {
-            renderedLines.add(lobbyText.render(line, target, nameTag));
+            String normalized = line.contains("%player_name%") ? line.replace("%player_name%", "<name>") : line;
+            renderedLines.add(lobbyText.render(normalized, target, nameTag, prefixTag, suffixTag));
         }
         return Component.join(JoinConfiguration.newlines(), renderedLines);
     }
@@ -295,5 +327,8 @@ final class UnlimitedNameTags {
         @Nullable Component lastText;
         boolean lastSneaking;
         @Nullable TagLook lastLook;
+        @Nullable net.minestom.server.instance.Instance lastInstance;
+        @Nullable net.minestom.server.coordinate.Pos lastPos;
+        int lastRealPassengers;
     }
 }

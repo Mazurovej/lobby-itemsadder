@@ -41,7 +41,7 @@ public final class FormattedText {
      * italic and the other decorations, so it becomes {@code <reset><color>}.
      */
     public static String legacyToMiniMessage(String text) {
-        if (text.indexOf('&') < 0 && text.indexOf('§') < 0) {
+        if (text.indexOf('&') < 0 && text.indexOf('§') < 0 && text.indexOf('{') < 0) {
             return text;
         }
         // When a custom <font:...> tag is used, <reset> would wipe the font back to minecraft:default.
@@ -51,6 +51,12 @@ public final class FormattedText {
         int i = 0;
         while (i < text.length()) {
             char c = text.charAt(i);
+            if (c == '{' && i + 8 < text.length() && text.charAt(i + 1) == '#'
+                    && text.charAt(i + 8) == '}' && isHex(text, i + 2)) {
+                out.append(colorReset).append("<#").append(text, i + 2, i + 2 + HEX_DIGITS).append('>');
+                i += 9;
+                continue;
+            }
             if ((c == '&' || c == '§') && i + 1 < text.length()) {
                 char code = Character.toLowerCase(text.charAt(i + 1));
                 String longHex = longHex(text, i);

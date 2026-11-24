@@ -163,6 +163,38 @@ class UnlimitedNameTagsTest {
                 "legacy viewer should keep vanilla NameTagVisibility.ALWAYS");
     }
 
+    @Test
+    void formattedPrefixPreprocessesGlyphsAndSupportsCurlyHexInChatAndTab(Env env, @TempDir Path dir) throws Exception {
+        ConfigManager manager = new ConfigManager(dir);
+        ConfigSnapshot snapshot = manager.load();
+        PlaceholderRegistry registry = new PlaceholderRegistry();
+        String lpPrefix = ":dev: {#74b9ff}";
+        registry.register("luckperms", name -> name.equals("prefix")
+                ? new Placeholder.Constant(lpPrefix, true)
+                : new Placeholder.Constant("", false));
+        PlaceholderService placeholders = new PlaceholderService(registry);
+        placeholders.textPreprocessor(s -> s.replace(":dev:", "<font:ia:ranks></font>"));
+        LobbyText text = new LobbyText(manager, placeholders);
+        ChatRenderer renderer = new ChatRenderer(text, () -> snapshot.chat(), () -> snapshot.messages());
+
+        Instance instance = env.createFlatInstance();
+        Player sender = env.createPlayer(instance, new Pos(0, 42, 0));
+        ChatConfig.Format customFormat = new ChatConfig.Format(
+                "custom", 10, java.util.Set.of("developer"),
+                "%luckperms_prefix%%player_name%: <message>", "", "", List.of(), "");
+        PlayerMeta meta = new PlayerMeta(lpPrefix, "", "developer", Map.of(), 100);
+        ChatMessage message = new ChatMessage("1", sender, "hello");
+        message.senderMeta(meta);
+        message.format(customFormat);
+
+        Component rendered = renderer.prepare(message, false, false).variant(new VariantKey(false, null, false));
+        assertEquals(TextColor.fromHexString("#74b9ff"), findTextColor(rendered, sender.getUsername()),
+                "%player_name% in chat should inherit {#RRGGBB} color from LuckPerms prefix");
+        assertTrue(net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
+                .serialize(rendered).contains(""),
+                "%luckperms_prefix% should run the ItemsAdder glyph preprocessor");
+    }
+
     private static TextColor findTextColor(Component component, String needle) {
         if (component instanceof TextComponent tc && tc.content().contains(needle) && tc.color() != null) {
             return tc.color();

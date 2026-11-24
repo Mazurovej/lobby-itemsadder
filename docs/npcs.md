@@ -98,10 +98,14 @@ always follows the NPC.
 /npc name <npc> insertline <number> <text>      (insertbefore also works)
 /npc name <npc> insertafter <number> <text>
 /npc name <npc> removeline <number>
+/npc name <npc> list
 /npc name <npc> set <property> <value>
 ```
 
-The properties are the hologram ones that make sense for a name: `scale`, `billboard`, `alignment`,
+You can also pass `\n` in `/npc displayname <npc> <line 1>\n<line 2>` to set multiple lines at once.
+
+The properties are the hologram ones that make sense for a name: `scale` (alias `size`), `offset` (head gap
+in blocks, aliases `y-offset`, `head-offset`, `name-offset`, default `0.15`), `billboard`, `alignment`,
 `background`, `text-shadow`, `see-through`, `view-distance`, `update-interval`, `line-spacing`,
 `brightness`, `shadow-radius` and `shadow-strength` (FancyHolograms' spellings also work).
 
@@ -188,6 +192,7 @@ bedwars:
   scale-up-when-looking: false # per-viewer scale-up when looking directly at the NPC (1.20.5+ clients)
   look-scale: 1.2              # multiplier applied to scale while looked at
   look-scale-distance: 12.0    # max distance in blocks for look-scaling
+  name-offset: 0.15            # vertical gap (in blocks) between the top of the head and the name tag
   pose: standing               # standing, crouching, sleeping, swimming, sitting
   show-in-tab: false
   equipment:                   # main_hand, off_hand, helmet, chestplate, leggings, boots (and body, saddle)

@@ -85,7 +85,11 @@ public final class ChatRenderer {
                 Placeholder.component("suffix", suffix));
 
         boolean ownLegacy = key.legacy() && !format.legacy().isBlank();
-        Component full = renderTemplate(message, ownLegacy ? format.legacy() : format.format(), tags);
+        String template = ownLegacy ? format.legacy() : format.format();
+        if (template.contains("%player_name%")) {
+            template = template.replace("%player_name%", "<name>");
+        }
+        Component full = renderTemplate(message, template, tags);
         return key.legacy() && !ownLegacy ? ComponentTransforms.downsampleColors(full) : full;
     }
 

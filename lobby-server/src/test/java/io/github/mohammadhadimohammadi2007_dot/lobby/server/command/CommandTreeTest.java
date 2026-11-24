@@ -66,6 +66,14 @@ class CommandTreeTest {
                     commands.execute(console, "npc scale_up_when_looking guide 1.35 16").getType());
             assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
                     commands.execute(console, "npc scale_up_when_looking guide false").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc name guide set offset 0.5").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc name guide set size 1.5").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc name guide list").getType());
+            assertEquals(net.minestom.server.command.builder.CommandResult.Type.SUCCESS,
+                    commands.execute(console, "npc displayname guide Line1\\nLine2").getType());
         } finally {
             stop.run();
         }

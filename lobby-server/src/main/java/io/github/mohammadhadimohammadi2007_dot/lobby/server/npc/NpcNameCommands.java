@@ -34,12 +34,14 @@ final class NpcNameCommands {
      * The hologram properties a name tag takes. Not its type, item, block, permission or visibility:
      * those belong to the NPC as a whole.
      */
-    private static final Set<String> NAME_PROPERTIES = Set.of("scale", "billboard", "alignment", "background",
+    private static final Set<String> NAME_PROPERTIES = Set.of("scale", "size", "offset", "y-offset", "yoffset",
+            "name-offset", "head-offset", "billboard", "alignment", "background",
             "text-shadow", "see-through", "view-distance", "update-interval", "line-spacing", "brightness",
             "shadow-radius", "shadow-strength",
             // FancyHolograms' spellings, which HologramProperties also accepts.
             "textshadow", "seethrough", "textalignment", "visibilitydistance", "updatetextinterval",
             "shadowradius", "shadowstrength");
+    private static final Set<String> OFFSET_ALIASES = Set.of("offset", "y-offset", "yoffset", "name-offset", "head-offset");
     private static final String NONE = "@none";
 
     /** What a line command does with the line number. */
@@ -71,8 +73,18 @@ final class NpcNameCommands {
                 return;
             }
             String written = String.join(" ", context.get(text));
-            data.nameTag().frames(List.of(written.equalsIgnoreCase(NONE) ? List.of() : List.of(written)));
-            support.changed(sender, data, "displayname", written.equalsIgnoreCase(NONE) ? "hidden" : written);
+            if (written.equalsIgnoreCase(NONE)) {
+                data.nameTag().frames(List.of(List.of()));
+                support.changed(sender, data, "displayname", "hidden");
+                return;
+            }
+            List<String> lines = List.of(written.split("\\\\n", -1));
+            if (lines.size() > HologramData.MAX_LINES) {
+                support.invalid(sender, "displayname", "too many lines", "at most " + HologramData.MAX_LINES);
+                return;
+            }
+            data.nameTag().frames(List.of(lines));
+            support.changed(sender, data, "displayname", written);
         }, npc, text);
         return command;
     }
@@ -95,6 +107,8 @@ final class NpcNameCommands {
                 String.join(" ", context.get(text)), Edit.AFTER), npc, ArgumentType.Literal("insertafter"), line, text);
         command.addSyntax((sender, context) -> removeLine(sender, context.get(npc), context.get(line)),
                 npc, ArgumentType.Literal("removeline"), line);
+        command.addSyntax((sender, context) -> listLines(sender, context.get(npc)),
+                npc, ArgumentType.Literal("list"));
 
         ArgumentWord property = ArgumentType.Word("property").from(NAME_PROPERTIES.stream().sorted()
                 .toArray(String[]::new));
@@ -154,23 +168,63 @@ final class NpcNameCommands {
         lineChanged(sender, npc, number);
     }
 
+    private void listLines(CommandSender sender, String npcName) {
+        NpcData npc = support.found(sender, npcName);
+        if (npc == null) {
+            return;
+        }
+        List<String> lines = npc.nameTag().lines();
+        StringBuilder sb = new StringBuilder();
+        sb.append("<gray>Name of <white>").append(npc.name()).append("</white> (scale: <white>")
+                .append(npc.nameTag().scale()).append("</white>, head offset: <white>")
+                .append(npc.nameOffset()).append("</white>):");
+        if (lines.isEmpty()) {
+            sb.append(" <gray>(hidden)");
+        } else {
+            for (int i = 0; i < lines.size(); i++) {
+                sb.append("\n<gray>").append(i + 1).append(". <white>").append(lines.get(i));
+            }
+        }
+        sender.sendMessage(support.text.render(sb.toString(), null));
+    }
+
     private void set(CommandSender sender, String npcName, String property, String value) {
         NpcData npc = support.found(sender, npcName);
         if (npc == null) {
             return;
         }
-        if (!NAME_PROPERTIES.contains(property.toLowerCase(Locale.ROOT))) {
+        String key = property.toLowerCase(Locale.ROOT);
+        if (!NAME_PROPERTIES.contains(key)) {
             sender.sendMessage(support.text.message(MessageKey.NPC_NAME_PROPERTIES, sender,
                     Messages.text("properties", String.join(", ", NAME_PROPERTIES.stream().sorted().toList()))));
             return;
         }
-        HologramProperties.Result result = HologramProperties.apply(npc.nameTag(), property, value);
-        if (result == null || result.failed()) {
-            support.invalid(sender, "name " + property, result == null ? "unknown property" : result.error(),
-                    HologramProperties.allowed(property));
+        if (OFFSET_ALIASES.contains(key)) {
+            double offset;
+            try {
+                offset = Double.parseDouble(value.strip());
+            } catch (NumberFormatException e) {
+                support.invalid(sender, "name offset", "not a number",
+                        "a number between " + NpcData.MIN_NAME_OFFSET + " and " + NpcData.MAX_NAME_OFFSET);
+                return;
+            }
+            if (!Double.isFinite(offset)) {
+                support.invalid(sender, "name offset", "not a finite number",
+                        "a number between " + NpcData.MIN_NAME_OFFSET + " and " + NpcData.MAX_NAME_OFFSET);
+                return;
+            }
+            npc.nameOffset(offset);
+            support.changed(sender, npc, "name offset", npc.nameOffset() + " blocks");
             return;
         }
-        support.changed(sender, npc, "name " + property, result.shown());
+        String resolvedProperty = key.equals("size") ? "scale" : key;
+        HologramProperties.Result result = HologramProperties.apply(npc.nameTag(), resolvedProperty, value);
+        if (result == null || result.failed()) {
+            support.invalid(sender, "name " + resolvedProperty, result == null ? "unknown property" : result.error(),
+                    HologramProperties.allowed(resolvedProperty));
+            return;
+        }
+        support.changed(sender, npc, "name " + resolvedProperty, result.shown());
     }
 
     private void lineChanged(CommandSender sender, NpcData npc, int line) {
