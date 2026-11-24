@@ -139,4 +139,33 @@ voicechat:
   # Block LiteBans-muted players from speaking.
   respect-mutes: true
 
-
+# ---------------- badcoreSettings ----------------
+# Cross-server player settings GUI (/settings, /prefs, /options) synced with Velocity
+# (plugin messaging channel "badcore:settings") and MariaDB (QOA + Practice/Duels tables).
+# Changes in this section apply live with /setup-lobby reload or /settings reload.
+badcore-settings:
+  enabled: false
+  # Cooldown between setting toggles in milliseconds (0 = no cooldown).
+  cooldown-ms: 500
+  # MariaDB connection for QOA and Practice/Duels settings.
+  # Set database.enabled to false to rely only on Velocity plugin-message sync.
+  database:
+    enabled: true
+    host: "localhost"
+    port: 3306
+    database: "badcore_practice"
+    username: "root"
+    password: ""
+    pool-size: 6
+    connection-timeout-ms: 5000
+    use-ssl: false
+    qoa-table: "badcore_qoa_settings"
+  messages:
+    player-only: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This command can only be used by players.</#CF8484>"
+    no-permission: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>You do not have permission to use this command.</#CF8484>"
+    vip-required: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This setting requires a VIP rank.</#CF8484>"
+    cooldown: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Please wait <white><seconds>s</white> before changing this again.</#CF8484>"
+    reloaded: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Settings configuration reloaded.</#8ECF84>"
+    dbtest-running: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>"
+    dbtest-ok: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>"
+    dbtest-fail: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"

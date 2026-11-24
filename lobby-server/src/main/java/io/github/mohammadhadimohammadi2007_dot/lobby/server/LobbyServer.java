@@ -167,6 +167,7 @@ public final class LobbyServer implements ServerInfo {
     private BridgeService bridge;
     private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder;
     private @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer voiceChat;
+    private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService badcoreSettings;
     private ChatSystem chat;
     private ActionServices actions;
     private MenuService menus;
@@ -419,6 +420,10 @@ public final class LobbyServer implements ServerInfo {
                         e.getMessage()));
             }
         }
+
+        badcoreSettings = new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService(
+                permissions);
+        integrations.add(badcoreSettings.reload(settings.badcoreSettings()));
     }
 
     /** LuckPerms if enabled and included in this build (operators on top); otherwise operators only. */
@@ -472,6 +477,12 @@ public final class LobbyServer implements ServerInfo {
         }
         menus = new MenuService(() -> configManager.current().menus(), text, actions, bridge);
         menus.addBuiltIn(LobbySelectorMenu.NAME, new LobbySelectorMenu(configManager, lobbies, bridge.networkState())::build);
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_HUB,
+                player -> badcoreSettings.openMenu(player, "hub"));
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_GLOBAL,
+                player -> badcoreSettings.openMenu(player, "global"));
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_DUELS,
+                player -> badcoreSettings.openMenu(player, "duels"));
         actions.menus(menus);
         actions.lobbies(lobbies);
     }
@@ -630,6 +641,7 @@ public final class LobbyServer implements ServerInfo {
         if (voiceChat != null) {
             voiceChat.register(playerEvents);
         }
+        badcoreSettings.register(playerEvents);
         placeholders.register(playerEvents);
         chat.register(playerEvents, MinecraftServer.getCommandManager());
         menus.register(playerEvents);
@@ -677,6 +689,8 @@ public final class LobbyServer implements ServerInfo {
         commands.register(new PortalCommand(portals, text, permissions));
         commands.register(new PvpCommand(pvp, text, permissions, wand));
         commands.register(new CosmeticsCommand(cosmeticsMenu, text, permissions));
+        commands.register(new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsCommand(
+                badcoreSettings, configManager, permissions));
         commands.register(new VanishCommand(vanish, text, permissions));
         commands.register(new StopCommand(text, permissions));
         new VanillaCommands(text, permissions, tickStats, StartupBanner.version(), hotbar::give).commands()
@@ -702,6 +716,10 @@ public final class LobbyServer implements ServerInfo {
         integrations.removeIf(status -> status.name().equals(
                 io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService.INTEGRATION_NAME));
         integrations.add(iaStatus);
+        IntegrationStatus badcoreStatus = badcoreSettings.reload(reloaded.integrations().badcoreSettings());
+        integrations.removeIf(status -> status.name().equals(
+                io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.INTEGRATION_NAME));
+        integrations.add(badcoreStatus);
         // Config values used by placeholders (operators, server name...) may have changed.
         placeholders.invalidateAll();
         chat.reload(reloaded);
@@ -803,6 +821,9 @@ public final class LobbyServer implements ServerInfo {
         permissions.shutdown();
         if (voiceChat != null) {
             voiceChat.shutdown();
+        }
+        if (badcoreSettings != null) {
+            badcoreSettings.shutdown();
         }
         if (liteBans != null) {
             liteBans.shutdown();

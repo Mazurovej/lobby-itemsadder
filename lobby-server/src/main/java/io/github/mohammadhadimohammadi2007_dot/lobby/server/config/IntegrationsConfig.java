@@ -1,20 +1,23 @@
 package io.github.mohammadhadimohammadi2007_dot.lobby.server.config;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
  * Everything in {@code integrations.yml}, already validated.
  *
- * @param database      shared MariaDB connection settings
- * @param luckPerms     LuckPerms settings
- * @param liteBans      LiteBans settings
- * @param skinsRestorer SkinsRestorer settings
- * @param bridge        proxy bridge settings
- * @param signedVelocity SignedVelocity sync settings
- * @param mineSkin      MineSkin settings
- * @param itemsAdder    ItemsAdder settings
- * @param voiceChat     Simple Voice Chat settings
+ * @param database        shared MariaDB connection settings
+ * @param luckPerms       LuckPerms settings
+ * @param liteBans        LiteBans settings
+ * @param skinsRestorer   SkinsRestorer settings
+ * @param bridge          proxy bridge settings
+ * @param signedVelocity  SignedVelocity sync settings
+ * @param mineSkin        MineSkin settings
+ * @param itemsAdder      ItemsAdder settings
+ * @param voiceChat       Simple Voice Chat settings
+ * @param badcoreSettings badcoreSettings GUI, bridge and MariaDB settings
  */
 public record IntegrationsConfig(
         Database database,
@@ -25,7 +28,8 @@ public record IntegrationsConfig(
         SignedVelocity signedVelocity,
         MineSkin mineSkin,
         ItemsAdder itemsAdder,
-        VoiceChat voiceChat
+        VoiceChat voiceChat,
+        BadcoreSettings badcoreSettings
 ) {
 
     private static final int MAX_PORT = 65535;
@@ -33,6 +37,7 @@ public record IntegrationsConfig(
     private static final int MAX_CHECK_INTERVAL_SECONDS = 60;
     /** Table prefixes end up inside SQL, so only allow safe characters. */
     private static final Pattern SAFE_PREFIX = Pattern.compile("[A-Za-z0-9_]{0,32}");
+    private static final Pattern SAFE_TABLE = Pattern.compile("[A-Za-z0-9_]{1,64}");
 
     /** {@code database:} section. */
     public record Database(String host, int port, String database, String username, String password, int poolSize) {
@@ -136,6 +141,54 @@ public record IntegrationsConfig(
         }
     }
 
+    /** {@code badcore-settings:} section. Reloadable live with {@code /setup-lobby reload} or {@code /settings reload}. */
+    public record BadcoreSettings(
+            boolean enabled,
+            long cooldownMs,
+            Database database,
+            Map<String, String> messages
+    ) {
+        public static final Map<String, String> DEFAULT_MESSAGES = Map.of(
+                "player-only", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This command can only be used by players.</#CF8484>",
+                "no-permission", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>You do not have permission to use this command.</#CF8484>",
+                "vip-required", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This setting requires a VIP rank.</#CF8484>",
+                "cooldown", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Please wait <white><seconds>s</white> before changing this again.</#CF8484>",
+                "reloaded", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Settings configuration reloaded.</#8ECF84>",
+                "dbtest-running", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>",
+                "dbtest-ok", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>",
+                "dbtest-fail", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
+        );
+
+        public static final BadcoreSettings DISABLED = new BadcoreSettings(
+                false, 500L,
+                new Database(true, "localhost", 3306, "badcore_practice", "root", "", 6, 5000L, false, "badcore_qoa_settings"),
+                DEFAULT_MESSAGES);
+
+        public String message(String key) {
+            return messages.getOrDefault(key, DEFAULT_MESSAGES.getOrDefault(key,
+                    "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Missing message: " + key + "</#CF8484>"));
+        }
+
+        /** {@code badcore-settings.database:} section. */
+        public record Database(
+                boolean enabled,
+                String host,
+                int port,
+                String database,
+                String username,
+                String password,
+                int poolSize,
+                long connectionTimeoutMs,
+                boolean useSsl,
+                String qoaTable
+        ) {
+            @Override
+            public String toString() {
+                return "BadcoreDatabase[" + username + "@" + host + ":" + port + "/" + database + "]";
+            }
+        }
+    }
+
     private static final Pattern SHA1_HEX = Pattern.compile("[0-9a-fA-F]{40}");
 
     /** True if any enabled integration needs the shared database pool. */
@@ -174,8 +227,38 @@ public record IntegrationsConfig(
         MineSkin mineSkin = new MineSkin(reader.string("mineskin.api-key", "").strip());
         ItemsAdder itemsAdder = readItemsAdder(reader);
         VoiceChat voiceChat = readVoiceChat(reader);
+        BadcoreSettings badcoreSettings = readBadcoreSettings(reader);
         return new IntegrationsConfig(database, luckPerms, liteBans, skinsRestorer, bridge, signedVelocity, mineSkin,
-                itemsAdder, voiceChat);
+                itemsAdder, voiceChat, badcoreSettings);
+    }
+
+    private static BadcoreSettings readBadcoreSettings(ConfigReader reader) {
+        boolean enabled = reader.bool("badcore-settings.enabled", false);
+        long cooldownMs = reader.integer("badcore-settings.cooldown-ms", 0, 60_000, 500);
+        boolean dbEnabled = reader.bool("badcore-settings.database.enabled", true);
+        String host = reader.string("badcore-settings.database.host", "localhost").trim();
+        int port = reader.integer("badcore-settings.database.port", 1, MAX_PORT, 3306);
+        String dbName = reader.string("badcore-settings.database.database", "badcore_practice").trim();
+        String username = reader.string("badcore-settings.database.username", "root").trim();
+        String password = reader.string("badcore-settings.database.password", "");
+        int poolSize = reader.integer("badcore-settings.database.pool-size", 2, 32, 6);
+        long timeoutMs = reader.integer("badcore-settings.database.connection-timeout-ms", 1000, 30_000, 5000);
+        boolean useSsl = reader.bool("badcore-settings.database.use-ssl", false);
+        String rawTable = reader.string("badcore-settings.database.qoa-table", "badcore_qoa_settings").trim();
+        String qoaTable = SAFE_TABLE.matcher(rawTable).matches() ? rawTable : "badcore_qoa_settings";
+        if (!SAFE_TABLE.matcher(rawTable).matches()) {
+            reader.reportInvalid("badcore-settings.database.qoa-table", rawTable,
+                    "letters, numbers and _ only (1-64 characters)");
+        }
+        BadcoreSettings.Database db = new BadcoreSettings.Database(
+                dbEnabled, host, port, dbName, username, password, poolSize, timeoutMs, useSsl, qoaTable);
+
+        Map<String, String> messages = new LinkedHashMap<>();
+        for (Map.Entry<String, String> entry : BadcoreSettings.DEFAULT_MESSAGES.entrySet()) {
+            String key = entry.getKey();
+            messages.put(key, reader.string("badcore-settings.messages." + key, entry.getValue()));
+        }
+        return new BadcoreSettings(enabled, cooldownMs, db, Map.copyOf(messages));
     }
 
     private static VoiceChat readVoiceChat(ConfigReader reader) {

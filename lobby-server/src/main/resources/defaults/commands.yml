@@ -40,6 +40,7 @@ groups:
       - chat
       - ignore
       - cosmetics
+      - settings
 
   # Examples (remove the # to use them):
   # mod:

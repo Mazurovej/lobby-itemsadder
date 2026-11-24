@@ -47,12 +47,25 @@ public final class Permissions {
     /** Ignore the protection settings in config.yml (break and place blocks, drop items...). */
     public static final String BYPASS_PROTECTION = "lobby.bypass.protection";
 
+    /** Open the badcoreSettings GUI with {@code /settings}. Everyone has it by default. */
+    public static final String BADCORE_SETTINGS_USE = "badcore.settings.use";
+    /** Admin subcommands {@code /settings reload} and {@code /settings dbtest}. */
+    public static final String BADCORE_SETTINGS_ADMIN = "badcore.settings.admin";
+    /** Show the SocialSpy toggle in Global Settings. */
+    public static final String BADCORE_QOA_SOCIALSPY = "badcore.qoa.socialspy";
+    /** Practice/Duels VIP settings toggles. */
+    public static final String BADCORE_LOBBY_FLY = "badcore.lobby.fly";
+    public static final String BADCORE_JOIN_MESSAGE = "badcore.join.message";
+    public static final String BADCORE_SPECTATE_PRIVACY = "badcore.spectate.privacy";
+    public static final String BADCORE_SPECTATE_SILENT = "badcore.spectate.silent";
+    public static final String DUELS_ADMIN = "duels.admin";
+
     /**
      * Permissions every player has when LuckPerms is disabled. With LuckPerms, give these to your
      * default group instead.
      */
     public static final Set<String> EVERYONE = Set.of(COMMAND_SPAWN, COMMAND_LOBBIES, COMMAND_LIST, COMMAND_COSMETICS,
-            "lobby.command.chat", "lobby.command.ignore", "lobby.chat.emoji");
+            BADCORE_SETTINGS_USE, "lobby.command.chat", "lobby.command.ignore", "lobby.chat.emoji");
 
     private Permissions() {
     }
