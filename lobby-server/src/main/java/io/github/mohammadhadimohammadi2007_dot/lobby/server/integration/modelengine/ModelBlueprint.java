@@ -185,8 +185,9 @@ public final class ModelBlueprint {
                     : Math.min(timeSeconds, anim.lengthSeconds());
         }
 
-        // Root rotation around Y so Minecraft yaw=0 faces South (+Z) matching Blockbench's front (-Z -> +Z).
-        float[] rootRot = quatAxisY(Math.toRadians(180.0 - bodyYawDeg));
+        // ItemDisplayRenderer already applies a 180-degree Y rotation to items, so at identity the model's
+        // Blockbench front (-Z) faces Minecraft South (+Z, yaw=0). Turning clockwise for +yaw is -yaw around +Y.
+        float[] rootRot = quatAxisY(Math.toRadians(-bodyYawDeg));
 
         Vec[] worldPos = new Vec[count];
         float[][] worldRot = new float[count][];
@@ -209,19 +210,22 @@ public final class ModelBlueprint {
                     ? sampleTrack(track.scale(), animTime, Vec.ONE)
                     : Vec.ONE;
 
-            // Blockbench position keyframes are in pixels (16 px = 1 block); X is mirrored in Blockbench UI.
+            // Blockbench position keyframes are in pixels (16 px = 1 block); both X and Z flip for South-facing (+Z).
             Vec localPos = new Vec(
                     bone.localOffset().x() - animPos.x() / 16.0,
                     bone.localOffset().y() + animPos.y() / 16.0,
-                    bone.localOffset().z() + animPos.z() / 16.0
+                    bone.localOffset().z() - animPos.z() / 16.0
             );
 
             double rx = bone.restRotation().x() + animRot.x();
             double ry = bone.restRotation().y() + animRot.y();
             double rz = bone.restRotation().z() + animRot.z();
             if (bone.head()) {
-                rx += clampedHeadPitch;
-                ry -= clampedHeadYaw;
+                // quatFromBlockbenchEuler negates degX and degY:
+                //   +headYaw (clockwise/West) -> -angle around +Y -> +degY
+                //   -headPitch (looking up)   -> -angle around +X -> +degX (so subtract headPitch)
+                rx -= clampedHeadPitch;
+                ry += clampedHeadYaw;
             }
             float[] localRot = quatFromBlockbenchEuler(rx, ry, rz);
 

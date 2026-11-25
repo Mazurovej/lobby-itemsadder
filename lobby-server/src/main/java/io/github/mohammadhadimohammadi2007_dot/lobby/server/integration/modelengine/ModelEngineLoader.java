@@ -259,11 +259,12 @@ public final class ModelEngineLoader {
             boolean isHead = boneName.equals("head") || boneName.startsWith("h_") || boneName.startsWith("hi_");
             BoneAsset asset = (visibleFlag && !isHelper) ? lookupBoneAsset(boneAssets, modelId, boneName) : null;
 
-            // Blockbench X axis is mirrored relative to Minecraft entity space.
+            // Blockbench front is -Z; ItemDisplayRenderer flips items 180 deg around Y to face +Z (South),
+            // so both X and Z negate when converting Blockbench pivots to entity space.
             Vec localOffset = new Vec(
                     -(originPx.x() - parentOriginPx.x()) / 16.0,
                     (originPx.y() - parentOriginPx.y()) / 16.0,
-                    (originPx.z() - parentOriginPx.z()) / 16.0
+                    -(originPx.z() - parentOriginPx.z()) / 16.0
             );
 
             int myIndex = out.size();

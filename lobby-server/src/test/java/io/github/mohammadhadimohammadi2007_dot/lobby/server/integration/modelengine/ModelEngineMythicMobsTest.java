@@ -135,6 +135,18 @@ class ModelEngineMythicMobsTest {
         assertEquals(poseAt0.get(0).translation().y() + 0.25, poseAt1.get(0).translation().y(), 1e-4);
         // Child head moves up with parent body too!
         assertEquals(poseAt0.get(1).translation().y() + 0.25, poseAt1.get(1).translation().y(), 1e-4);
+
+        // Facing verification: at yaw=0 front is +Z (South); yaw=+90 faces West (-X); head pitch < 0 looks up (+Y).
+        var forwardSouth = new net.minestom.server.coordinate.Vec(0, 0, 1);
+        var facingWest = knight.samplePose("none", 0.0, 90f, 0f, 0f, 1.0);
+        var bodyDirWest = ModelBlueprint.rotateVec(facingWest.get(0).rotation(), forwardSouth);
+        assertEquals(-1.0, bodyDirWest.x(), 1e-4, "yaw=+90 should face West (-X)");
+        assertEquals(0.0, bodyDirWest.z(), 1e-4);
+
+        var headTurnRightAndUp = knight.samplePose("none", 0.0, 0f, 45f, -30f, 1.0);
+        var headDir = ModelBlueprint.rotateVec(headTurnRightAndUp.get(1).rotation(), forwardSouth);
+        assertTrue(headDir.x() < -0.5, "positive headYawRel should turn clockwise toward West (-X): " + headDir);
+        assertTrue(headDir.y() > 0.4, "negative headPitch should tilt head upward (+Y): " + headDir);
     }
 
     @Test
