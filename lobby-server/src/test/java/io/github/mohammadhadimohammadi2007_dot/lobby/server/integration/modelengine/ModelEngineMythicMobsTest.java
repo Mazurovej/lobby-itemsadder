@@ -292,6 +292,79 @@ class ModelEngineMythicMobsTest {
         assertEquals(1.5, mobs.get("quotedknight").scale(), 1e-6);
     }
 
+    @Test
+    void supportsBlockbench50TopLevelGroups(Env env) throws Exception {
+        Path megDir = dir.resolve("meg_bb50");
+        Files.createDirectories(megDir.resolve("blueprints"));
+        Files.writeString(megDir.resolve("blueprints/santa.bbmodel"), """
+                {
+                  "meta": { "format_version": "5.0" },
+                  "elements": [
+                    { "uuid": "c1", "from": [-6, 0, -4], "to": [6, 20, 4] }
+                  ],
+                  "groups": [
+                    { "name": "root", "uuid": "u-root", "origin": [0, 0, 0], "rotation": [0, 0, 0], "visibility": true },
+                    { "name": "body", "uuid": "u-body", "origin": [0, 11, 0], "rotation": [0, 0, 0], "visibility": true },
+                    { "name": "head", "uuid": "u-head", "origin": [0, 27, 1], "rotation": [0, 0, 0], "visibility": true }
+                  ],
+                  "outliner": [
+                    {
+                      "uuid": "u-root",
+                      "children": [
+                        {
+                          "uuid": "u-body",
+                          "children": [
+                            "c1",
+                            { "uuid": "u-head", "children": [] }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "animations": [
+                    {
+                      "name": "idle",
+                      "loop": "loop",
+                      "length": 2.0,
+                      "animators": {
+                        "u-head": {
+                          "keyframes": [
+                            { "channel": "rotation", "time": 0.0, "interpolation": "catmullrom", "data_points": [{ "x": "0", "y": "0", "z": "0" }] },
+                            { "channel": "rotation", "time": 1.0, "interpolation": "catmullrom", "data_points": [{ "x": "10", "y": "0", "z": "0" }] }
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+                """);
+
+        Path packZip = dir.resolve("santa_pack.zip");
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(packZip), StandardCharsets.UTF_8)) {
+            zos.putNextEntry(new ZipEntry("assets/modelengine/items/santa/body.json"));
+            zos.write("""
+                    {"model":{"type":"minecraft:model","model":"modelengine:santa/body"}}
+                    """.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+            zos.putNextEntry(new ZipEntry("assets/modelengine/items/santa/head.json"));
+            zos.write("""
+                    {"model":{"type":"minecraft:model","model":"modelengine:santa/head"}}
+                    """.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        Map<String, ModelBlueprint> bps = ModelEngineLoader.load(megDir, List.of(packZip), "leather_horse_armor");
+        ModelBlueprint santa = bps.get("santa");
+        assertNotNull(santa);
+        assertEquals(3, santa.bones().size());
+        assertEquals(2, santa.visibleBoneCount(), "Blockbench 5.0 body and head bones should map from top-level groups[]");
+        assertTrue(santa.hasHeadBone());
+        assertNotNull(santa.animation("idle"));
+        // Verify head pivot offset from body: (0, 27-11, -(1-0)) / 16 = (0, 1.0, -0.0625)
+        assertEquals(1.0, santa.bones().get(2).localOffset().y(), 1e-4);
+        assertEquals(-1.0 / 16.0, santa.bones().get(2).localOffset().z(), 1e-4);
+    }
+
     private static void writeMergedPack(Path zipPath) throws Exception {
         Files.createDirectories(zipPath.getParent());
         try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(zipPath), StandardCharsets.UTF_8)) {

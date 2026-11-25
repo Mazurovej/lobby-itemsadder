@@ -189,13 +189,29 @@ public final class ModelEngineLoader {
         double height = Double.isFinite(minY) ? Math.max(0.5, (maxY - Math.min(0.0, minY)) / 16.0) : 1.8;
         double eyeHeight = height * 0.85;
 
+        // Blockbench 5.0+ moves bone metadata (name, origin, rotation, visibility) into a top-level "groups" array
+        // while "outliner" holds only {uuid, children}. Index groups by UUID so both 4.x and 5.0+ files work.
+        Map<String, JsonObject> groupsByUuid = new HashMap<>();
+        if (root.has("groups") && root.get("groups").isJsonArray()) {
+            for (JsonElement gEl : root.getAsJsonArray("groups")) {
+                if (!gEl.isJsonObject()) {
+                    continue;
+                }
+                JsonObject gObj = gEl.getAsJsonObject();
+                String gUuid = stringOr(gObj, "uuid", "");
+                if (!gUuid.isEmpty()) {
+                    groupsByUuid.put(gUuid, gObj);
+                }
+            }
+        }
+
         // Parse bone hierarchy from outliner in parent-first order.
         List<Bone> bones = new ArrayList<>();
         Map<String, Integer> uuidToIndex = new HashMap<>();
         Map<String, Integer> nameToIndex = new HashMap<>();
         if (root.has("outliner") && root.get("outliner").isJsonArray()) {
             parseOutlinerChildren(id, root.getAsJsonArray("outliner"), -1, Vec.ZERO,
-                    boneAssets, bones, uuidToIndex, nameToIndex);
+                    groupsByUuid, boneAssets, bones, uuidToIndex, nameToIndex);
         }
 
         // Refine eyeHeight if there's a head bone.
@@ -238,6 +254,7 @@ public final class ModelEngineLoader {
     }
 
     private static void parseOutlinerChildren(String modelId, JsonArray array, int parentIndex, Vec parentOriginPx,
+                                              Map<String, JsonObject> groupsByUuid,
                                               Map<String, BoneAsset> boneAssets, List<Bone> out,
                                               Map<String, Integer> uuidToIndex, Map<String, Integer> nameToIndex) {
         for (JsonElement el : array) {
@@ -245,12 +262,15 @@ public final class ModelEngineLoader {
                 continue;
             }
             JsonObject obj = el.getAsJsonObject();
-            String rawName = stringOr(obj, "name", "");
+            String rawUuid = stringOr(obj, "uuid", "");
+            JsonObject meta = (!rawUuid.isEmpty() && groupsByUuid.containsKey(rawUuid))
+                    ? groupsByUuid.get(rawUuid) : obj;
+            String rawName = stringOr(meta, "name", stringOr(obj, "name", ""));
             String boneName = sanitizeId(rawName);
-            String uuid = stringOr(obj, "uuid", boneName + "#" + out.size());
-            Vec originPx = readVec3(obj.get("origin"), Vec.ZERO);
-            Vec rotation = readVec3(obj.get("rotation"), Vec.ZERO);
-            boolean visibleFlag = !obj.has("visibility") || obj.get("visibility").getAsBoolean();
+            String uuid = !rawUuid.isEmpty() ? rawUuid : (boneName + "#" + out.size());
+            Vec originPx = readVec3(meta.get("origin"), readVec3(obj.get("origin"), Vec.ZERO));
+            Vec rotation = readVec3(meta.get("rotation"), readVec3(obj.get("rotation"), Vec.ZERO));
+            boolean visibleFlag = !meta.has("visibility") || meta.get("visibility").getAsBoolean();
 
             JsonArray children = obj.has("children") && obj.get("children").isJsonArray()
                     ? obj.getAsJsonArray("children") : null;
@@ -283,7 +303,8 @@ public final class ModelEngineLoader {
             nameToIndex.putIfAbsent(rawName.toLowerCase(Locale.ROOT), myIndex);
 
             if (children != null) {
-                parseOutlinerChildren(modelId, children, myIndex, originPx, boneAssets, out, uuidToIndex, nameToIndex);
+                parseOutlinerChildren(modelId, children, myIndex, originPx, groupsByUuid,
+                        boneAssets, out, uuidToIndex, nameToIndex);
             }
         }
     }
