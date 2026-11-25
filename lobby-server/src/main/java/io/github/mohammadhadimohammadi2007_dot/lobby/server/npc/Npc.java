@@ -80,8 +80,9 @@ public final class Npc implements ClientObject {
      * @param text   the name tag's group (tier, and the viewer for per-player names)
      * @param scaled true if the viewer's client draws the NPC's size; always false at normal size, so
      *               normal-size NPCs never split viewers by it
+     * @param model  ModelEngine blueprint id (so changing models cleanly destroys old parts and spawns new bones)
      */
-    record Key(HologramText.Variant text, boolean scaled) {
+    record Key(HologramText.Variant text, boolean scaled, String model) {
     }
 
     /** Last overridden look-scale sent to a viewer and the NPC data revision it was computed against. */
@@ -149,7 +150,7 @@ public final class Npc implements ClientObject {
         boolean mirror = data.skin().kind() == NpcSkin.Kind.MIRROR;
         HologramText.Variant text = HologramText.variant(data.nameTag(), services.text(), viewer,
                 services.legacyClient().test(viewer), mirror);
-        return new Key(text, data.scale() != 1 && services.scaleSupported().test(viewer));
+        return new Key(text, data.scale() != 1 && services.scaleSupported().test(viewer), data.model());
     }
 
     @Override
@@ -163,7 +164,7 @@ public final class Npc implements ClientObject {
      */
     @Override
     public List<EntityPart> render(Object key, Player viewer) {
-        Key npcKey = key instanceof Key known ? known : new Key(new HologramText.Variant(false, null), false);
+        Key npcKey = key instanceof Key known ? known : new Key(new HologramText.Variant(false, null), false, "");
         boolean legacy = npcKey.text().legacy();
         var blueprint = !legacy ? data.resolvedBlueprint() : null;
         if (blueprint != null && blueprint.visibleBoneCount() > 0) {

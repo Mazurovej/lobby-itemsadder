@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -41,7 +42,8 @@ import java.util.zip.ZipFile;
 
 /**
  * Loads ModelEngine R4 {@code .bbmodel} blueprints and resolves each bone to its Minecraft
- * {@link ItemStack} ({@code item_model} for 1.21.4+ or {@code custom_model_data} override) from:
+ * {@link ItemStack} ({@code item_model} for 1.21.4+, {@code custom_model_data} float/string
+ * dispatch, or classic {@code overrides}) from:
  * <ul>
  *     <li>A ModelEngine folder ({@code blueprints/*.bbmodel}, {@code model_data.json}, {@code resource pack/})</li>
  *     <li>A standalone ModelEngine resource pack {@code .zip}</li>
@@ -53,9 +55,11 @@ public final class ModelEngineLoader {
     private static final Logger LOGGER = LoggerFactory.getLogger(ModelEngineLoader.class);
     private static final Color WHITE_DYE = new Color(0xFFFFFF);
     private static final Pattern VANILLA_ITEM_MODEL_JSON = Pattern.compile("^assets/minecraft/models/item/([^/]+)\\.json$");
-    private static final Pattern VANILLA_ITEM_DEF_JSON = Pattern.compile("^assets/minecraft/items/([^/]+)\\.json$");
-    private static final Pattern MODERN_ITEM_DEF_JSON = Pattern.compile("^assets/([^/]+)/items/(.+)\\.json$");
-    private static final Pattern ENTITY_MODEL_JSON = Pattern.compile("^assets/([^/]+)/models/(?:entity/)?([^/]+)/(.+)\\.json$");
+    private static final Pattern ITEM_DEF_JSON = Pattern.compile("^assets/([^/]+)/items/(.+)\\.json$");
+    private static final Pattern ENTITY_MODEL_JSON = Pattern.compile("^assets/([^/]+)/models/(.+)\\.json$");
+    private static final Set<String> MEG_NAMESPACES = Set.of("modelengine", "meg");
+    private static final Set<String> BEHAVIOR_PREFIXES = Set.of(
+            "h", "hi", "g", "seg", "ir", "il", "v", "b", "p", "ob", "sub", "l", "r");
     private static final long MAX_JSON_BYTES = 16L * 1024L * 1024L;
 
     /** Resolved item & display transform for one bone. */
@@ -77,22 +81,21 @@ public final class ModelEngineLoader {
         Map<String, BoneAsset> boneAssets = new HashMap<>();
         Map<String, Byte> displayTypes = new HashMap<>();
 
-        // 1. Scan resource packs (ItemsAdder merged pack + ModelEngine pack) for bone item mappings.
+        // 1. Scan resource packs (ModelEngine pack + merged ItemsAdder pack) for bone item mappings.
         for (Path zip : packZips) {
             if (zip != null && Files.isRegularFile(zip)) {
-                scanPackZip(zip, boneAssets, displayTypes);
+                scanPackZip(zip, defaultMaterial, boneAssets, displayTypes);
             }
         }
         if (dataDir != null && Files.isDirectory(dataDir)) {
             Path unpackedPack = dataDir.resolve("resource pack");
             if (Files.isDirectory(unpackedPack)) {
-                scanPackFolder(unpackedPack, boneAssets, displayTypes);
+                scanPackFolder(unpackedPack, defaultMaterial, boneAssets, displayTypes);
             }
             Path autoZip = dataDir.resolve("resource pack.zip");
             if (Files.isRegularFile(autoZip)) {
-                scanPackZip(autoZip, boneAssets, displayTypes);
+                scanPackZip(autoZip, defaultMaterial, boneAssets, displayTypes);
             }
-            // Also read ModelEngine R4's model_data.json if present (fills any missing CMD entries).
             for (String candidate : List.of("model_data.json", "cache/model_data.json", "resource pack/model_data.json")) {
                 Path dataFile = dataDir.resolve(candidate);
                 if (Files.isRegularFile(dataFile)) {
@@ -126,6 +129,12 @@ public final class ModelEngineLoader {
                         ModelBlueprint bp = parseBbmodel(file, boneAssets);
                         if (bp != null) {
                             blueprints.put(bp.id(), bp);
+                            if (bp.visibleBoneCount() == 0 && !bp.bones().isEmpty()) {
+                                LOGGER.warn("ModelEngine: blueprint '{}' has 0/{} mapped bone(s) in the resource pack "
+                                                + "(total pack bone assets indexed: {}). Make sure the ModelEngine "
+                                                + "resource pack is merged into itemsadder/output/generated.zip or set modelengine.pack-zip.",
+                                        bp.id(), bp.bones().size(), boneAssets.size());
+                            }
                         }
                     });
         } catch (IOException e) {
@@ -137,7 +146,7 @@ public final class ModelEngineLoader {
     /** Parses one Blockbench {@code .bbmodel} file into a {@link ModelBlueprint}. */
     static @Nullable ModelBlueprint parseBbmodel(Path file, Map<String, BoneAsset> boneAssets) {
         String fileName = file.getFileName().toString();
-        String modelId = fileName.substring(0, fileName.length() - ".bbmodel".length()).toLowerCase(Locale.ROOT);
+        String modelId = sanitizeId(fileName.substring(0, fileName.length() - ".bbmodel".length()));
         try {
             String raw = Files.readString(file, StandardCharsets.UTF_8);
             JsonElement parsed = JsonParser.parseString(raw);
@@ -152,7 +161,7 @@ public final class ModelEngineLoader {
     }
 
     static ModelBlueprint parseBbmodelJson(String modelId, JsonObject root, Map<String, BoneAsset> boneAssets) {
-        String id = modelId.toLowerCase(Locale.ROOT);
+        String id = sanitizeId(modelId);
 
         // Compute bounding box from cube elements (in pixels -> blocks).
         double minX = Double.POSITIVE_INFINITY, maxX = Double.NEGATIVE_INFINITY;
@@ -189,7 +198,7 @@ public final class ModelEngineLoader {
                     boneAssets, bones, uuidToIndex, nameToIndex);
         }
 
-        // Refine eyeHeight if there's a head bone, or height if there's a tag_name bone.
+        // Refine eyeHeight if there's a head bone.
         for (Bone b : bones) {
             if (b.head()) {
                 double headY = absolutePivotY(bones, uuidToIndex.get(b.uuid()));
@@ -237,33 +246,18 @@ public final class ModelEngineLoader {
             }
             JsonObject obj = el.getAsJsonObject();
             String rawName = stringOr(obj, "name", "");
-            String boneName = rawName.toLowerCase(Locale.ROOT);
+            String boneName = sanitizeId(rawName);
             String uuid = stringOr(obj, "uuid", boneName + "#" + out.size());
             Vec originPx = readVec3(obj.get("origin"), Vec.ZERO);
             Vec rotation = readVec3(obj.get("rotation"), Vec.ZERO);
             boolean visibleFlag = !obj.has("visibility") || obj.get("visibility").getAsBoolean();
 
-            // Check if this bone has direct cube elements (string children).
-            boolean hasCubes = false;
             JsonArray children = obj.has("children") && obj.get("children").isJsonArray()
                     ? obj.getAsJsonArray("children") : null;
-            if (children != null) {
-                for (JsonElement child : children) {
-                    if (child.isJsonPrimitive()) {
-                        hasCubes = true;
-                        break;
-                    }
-                }
-            }
 
             boolean isHelper = isHelperBone(boneName);
-            boolean isHead = boneName.equals("head") || boneName.startsWith("h_");
+            boolean isHead = boneName.equals("head") || boneName.startsWith("h_") || boneName.startsWith("hi_");
             BoneAsset asset = (visibleFlag && !isHelper) ? lookupBoneAsset(boneAssets, modelId, boneName) : null;
-            // Even if a bone has no direct cubes, if the pack explicitly has an item for it, render it;
-            // conversely, if it has no asset in the pack, keep it as a pivot-only bone for child transforms.
-            if (!hasCubes && asset == null) {
-                asset = null;
-            }
 
             // Blockbench X axis is mirrored relative to Minecraft entity space.
             Vec localOffset = new Vec(
@@ -285,6 +279,7 @@ public final class ModelEngineLoader {
             ));
             uuidToIndex.put(uuid, myIndex);
             nameToIndex.putIfAbsent(boneName, myIndex);
+            nameToIndex.putIfAbsent(rawName.toLowerCase(Locale.ROOT), myIndex);
 
             if (children != null) {
                 parseOutlinerChildren(modelId, children, myIndex, originPx, boneAssets, out, uuidToIndex, nameToIndex);
@@ -294,11 +289,10 @@ public final class ModelEngineLoader {
 
     private static boolean isHelperBone(String boneName) {
         return boneName.equals("hitbox")
-                || boneName.startsWith("b_")
-                || boneName.startsWith("tag_")
-                || boneName.startsWith("p_")
-                || boneName.startsWith("ob_")
-                || boneName.startsWith("sub_");
+                || boneName.equals("subhitbox")
+                || boneName.equals("nametag")
+                || boneName.equals("mount")
+                || boneName.startsWith("tag_");
     }
 
     private static @Nullable BoneAsset lookupBoneAsset(Map<String, BoneAsset> assets, String modelId, String boneName) {
@@ -306,23 +300,32 @@ public final class ModelEngineLoader {
         if (direct != null) {
             return direct;
         }
-        // ModelEngine R4 strips behavior prefixes like "h_" when exporting bone JSON filenames.
+        // ModelEngine R4 strips behavior prefixes (e.g. h_head -> head, b_body -> body) when exporting bone models.
         String stripped = stripBehaviorPrefix(boneName);
-        if (!stripped.equals(boneName)) {
-            return assets.get(modelId + "/" + stripped);
+        while (!stripped.equals(boneName)) {
+            BoneAsset found = assets.get(modelId + "/" + stripped);
+            if (found != null) {
+                return found;
+            }
+            boneName = stripped;
+            stripped = stripBehaviorPrefix(boneName);
         }
         return null;
     }
 
     private static String stripBehaviorPrefix(String boneName) {
         int idx = boneName.indexOf('_');
-        if (idx > 0 && idx <= 3 && idx + 1 < boneName.length()) {
+        if (idx > 0 && idx <= 4 && idx + 1 < boneName.length()) {
             String prefix = boneName.substring(0, idx);
-            if (prefix.equals("h") || prefix.equals("hi") || prefix.equals("g") || prefix.equals("seg")) {
+            if (BEHAVIOR_PREFIXES.contains(prefix)) {
                 return boneName.substring(idx + 1);
             }
         }
         return boneName;
+    }
+
+    private static String sanitizeId(String raw) {
+        return raw.strip().toLowerCase(Locale.ROOT).replace(' ', '_');
     }
 
     private static @Nullable Animation parseAnimation(JsonObject obj, Map<String, Integer> uuidToIndex,
@@ -345,7 +348,7 @@ public final class ModelEngineLoader {
                 JsonObject animObj = entry.getValue().getAsJsonObject();
                 Integer boneIndex = uuidToIndex.get(entry.getKey());
                 if (boneIndex == null) {
-                    String bName = stringOr(animObj, "name", "").toLowerCase(Locale.ROOT);
+                    String bName = sanitizeId(stringOr(animObj, "name", ""));
                     boneIndex = nameToIndex.get(bName);
                 }
                 if (boneIndex == null || !animObj.has("keyframes") || !animObj.get("keyframes").isJsonArray()) {
@@ -409,7 +412,8 @@ public final class ModelEngineLoader {
 
     // ---------------- Resource pack scanning ----------------
 
-    private static void scanPackZip(Path zipPath, Map<String, BoneAsset> boneAssets, Map<String, Byte> displayTypes) {
+    private static void scanPackZip(Path zipPath, Material defaultMaterial,
+                                    Map<String, BoneAsset> boneAssets, Map<String, Byte> displayTypes) {
         try (ZipFile zip = new ZipFile(zipPath.toFile(), StandardCharsets.UTF_8)) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             while (entries.hasMoreElements()) {
@@ -422,7 +426,7 @@ public final class ModelEngineLoader {
                     continue;
                 }
                 try (var reader = new InputStreamReader(zip.getInputStream(entry), StandardCharsets.UTF_8)) {
-                    processPackJson(path, reader, boneAssets, displayTypes);
+                    processPackJson(path, reader, defaultMaterial, boneAssets, displayTypes);
                 } catch (Exception ignored) {
                 }
             }
@@ -431,14 +435,15 @@ public final class ModelEngineLoader {
         }
     }
 
-    private static void scanPackFolder(Path root, Map<String, BoneAsset> boneAssets, Map<String, Byte> displayTypes) {
+    private static void scanPackFolder(Path root, Material defaultMaterial,
+                                       Map<String, BoneAsset> boneAssets, Map<String, Byte> displayTypes) {
         try (Stream<Path> walk = Files.walk(root)) {
             walk.filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".json"))
                     .forEach(file -> {
                         String rel = root.relativize(file).toString().replace('\\', '/');
                         try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-                            processPackJson(rel, reader, boneAssets, displayTypes);
+                            processPackJson(rel, reader, defaultMaterial, boneAssets, displayTypes);
                         } catch (Exception ignored) {
                         }
                     });
@@ -447,28 +452,40 @@ public final class ModelEngineLoader {
         }
     }
 
-    private static void processPackJson(String path, java.io.Reader reader,
+    private static void processPackJson(String path, java.io.Reader reader, Material defaultMaterial,
                                         Map<String, BoneAsset> boneAssets, Map<String, Byte> displayTypes) {
-        // 1. 1.21.4+ modern item definitions: assets/modelengine/items/<model>/<bone>.json
-        Matcher modernItem = MODERN_ITEM_DEF_JSON.matcher(path);
-        if (modernItem.matches()) {
-            String ns = modernItem.group(1).toLowerCase(Locale.ROOT);
-            String itemPath = modernItem.group(2).toLowerCase(Locale.ROOT);
+        // 1. 1.21.4+ item definitions: assets/<ns>/items/<...>.json
+        Matcher itemDef = ITEM_DEF_JSON.matcher(path);
+        if (itemDef.matches()) {
+            String ns = itemDef.group(1).toLowerCase(Locale.ROOT);
+            String itemPath = itemDef.group(2).toLowerCase(Locale.ROOT);
+            JsonElement el = JsonParser.parseReader(reader);
+            if (!el.isJsonObject()) {
+                return;
+            }
+            JsonObject root = el.getAsJsonObject();
+
             if (ns.equals("minecraft")) {
-                // Check range_dispatch custom_model_data overrides (1.21.4+ format)
+                // Merged vanilla item definition (e.g. bone.json, leather_horse_armor.json) with range_dispatch / select.
                 Material base = resolveMaterial(itemPath);
-                JsonElement el = JsonParser.parseReader(reader);
-                if (el.isJsonObject()) {
-                    extractRangeDispatchOverrides(el.getAsJsonObject(), base, boneAssets);
+                if (root.has("model") && root.get("model").isJsonObject()) {
+                    walkItemDefNode(root.getAsJsonObject("model"), base, null, boneAssets);
                 }
                 return;
             }
-            if (ns.equals("modelengine") || itemPath.startsWith("entity/")) {
-                String key = extractModelBoneKey(itemPath);
-                if (key != null) {
-                    ItemStack stack = buildItemModelStack(Material.LEATHER_HORSE_ARMOR, ns + ":" + itemPath);
-                    boneAssets.putIfAbsent(key, new BoneAsset(stack, ModelBlueprint.DISPLAY_HEAD));
+
+            // Custom namespace item definition (e.g. assets/modelengine/items/knight/head.json
+            // or assets/modelengine/items/knight.json with select/range_dispatch inside).
+            String fullItemModel = ns + ":" + itemPath;
+            if (MEG_NAMESPACES.contains(ns) || itemPath.startsWith("entity/")) {
+                String directKey = extractModelBoneKey(itemPath);
+                if (directKey != null) {
+                    ItemStack stack = buildItemModelStack(defaultMaterial, fullItemModel);
+                    registerBoneAsset(boneAssets, directKey, new BoneAsset(stack, ModelBlueprint.DISPLAY_HEAD));
                 }
+            }
+            if (root.has("model") && root.get("model").isJsonObject()) {
+                walkItemDefNode(root.getAsJsonObject("model"), defaultMaterial, fullItemModel, boneAssets);
             }
             return;
         }
@@ -504,7 +521,8 @@ public final class ModelEngineLoader {
                 }
                 String key = extractModelBoneKeyFromRef(modelRef);
                 if (key != null) {
-                    boneAssets.putIfAbsent(key, new BoneAsset(buildCmdStack(base, cmd), ModelBlueprint.DISPLAY_HEAD));
+                    registerBoneAsset(boneAssets, key,
+                            new BoneAsset(buildCmdFloatStack(base, null, (float) cmd), ModelBlueprint.DISPLAY_HEAD));
                 }
             }
             return;
@@ -514,53 +532,157 @@ public final class ModelEngineLoader {
         Matcher entityModel = ENTITY_MODEL_JSON.matcher(path);
         if (entityModel.matches()) {
             String ns = entityModel.group(1).toLowerCase(Locale.ROOT);
-            if (!ns.equals("modelengine") && !path.contains("/entity/")) {
+            String modelPath = entityModel.group(2).toLowerCase(Locale.ROOT);
+            if (!MEG_NAMESPACES.contains(ns) && !modelPath.startsWith("entity/")) {
                 return;
             }
-            String modelName = entityModel.group(2).toLowerCase(Locale.ROOT);
-            String boneName = entityModel.group(3).toLowerCase(Locale.ROOT);
+            String key = extractModelBoneKey(modelPath);
+            if (key == null) {
+                return;
+            }
             JsonElement el = JsonParser.parseReader(reader);
             if (el.isJsonObject() && el.getAsJsonObject().has("display")
                     && el.getAsJsonObject().get("display").isJsonObject()) {
                 JsonObject display = el.getAsJsonObject().getAsJsonObject("display");
-                if (!display.has("head") && display.has("fixed")) {
-                    displayTypes.put(modelName + "/" + boneName, ModelBlueprint.DISPLAY_FIXED);
-                } else if (display.has("head")) {
-                    displayTypes.put(modelName + "/" + boneName, ModelBlueprint.DISPLAY_HEAD);
+                byte displayType = (!display.has("head") && display.has("fixed"))
+                        ? ModelBlueprint.DISPLAY_FIXED
+                        : ModelBlueprint.DISPLAY_HEAD;
+                displayTypes.put(key, displayType);
+                String shortKey = shortenNestedKey(key);
+                if (shortKey != null) {
+                    displayTypes.putIfAbsent(shortKey, displayType);
                 }
             }
         }
     }
 
-    private static void extractRangeDispatchOverrides(JsonObject root, Material base, Map<String, BoneAsset> out) {
-        if (!root.has("model") || !root.get("model").isJsonObject()) {
+    /**
+     * Recursively walks a 1.21.4+ item definition model tree ({@code range_dispatch}, {@code select},
+     * {@code condition}, {@code composite}, {@code model}) to extract every ModelEngine bone mapping.
+     */
+    private static void walkItemDefNode(JsonObject node, Material base, @Nullable String itemModelId,
+                                        Map<String, BoneAsset> out) {
+        String type = stringOr(node, "type", "").toLowerCase(Locale.ROOT);
+
+        if (type.endsWith("range_dispatch")) {
+            String property = stringOr(node, "property", "").toLowerCase(Locale.ROOT);
+            boolean isCmd = property.isEmpty() || property.endsWith("custom_model_data");
+            if (isCmd && node.has("entries") && node.get("entries").isJsonArray()) {
+                for (JsonElement e : node.getAsJsonArray("entries")) {
+                    if (!e.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject entry = e.getAsJsonObject();
+                    double threshold = parseDouble(entry.get("threshold"), -1.0);
+                    if (threshold < 0.0 || !entry.has("model") || !entry.get("model").isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject modelObj = entry.getAsJsonObject("model");
+                    String modelRef = findFirstModelRef(modelObj);
+                    String key = extractModelBoneKeyFromRef(modelRef);
+                    if (key != null) {
+                        registerBoneAsset(out, key, new BoneAsset(
+                                buildCmdFloatStack(base, itemModelId, (float) threshold),
+                                ModelBlueprint.DISPLAY_HEAD));
+                    }
+                }
+            }
+            if (node.has("fallback") && node.get("fallback").isJsonObject()) {
+                walkItemDefNode(node.getAsJsonObject("fallback"), base, itemModelId, out);
+            }
             return;
         }
-        walkItemDefNode(root.getAsJsonObject("model"), base, out);
-    }
 
-    private static void walkItemDefNode(JsonObject node, Material base, Map<String, BoneAsset> out) {
-        String type = stringOr(node, "type", "");
-        if (type.endsWith("range_dispatch") && node.has("entries") && node.get("entries").isJsonArray()) {
-            for (JsonElement e : node.getAsJsonArray("entries")) {
-                if (!e.isJsonObject()) {
-                    continue;
+        if (type.endsWith("select")) {
+            String property = stringOr(node, "property", "").toLowerCase(Locale.ROOT);
+            boolean isCmd = property.endsWith("custom_model_data");
+            if (isCmd && node.has("cases") && node.get("cases").isJsonArray()) {
+                for (JsonElement c : node.getAsJsonArray("cases")) {
+                    if (!c.isJsonObject()) {
+                        continue;
+                    }
+                    JsonObject cObj = c.getAsJsonObject();
+                    if (!cObj.has("model") || !cObj.get("model").isJsonObject()) {
+                        continue;
+                    }
+                    String modelRef = findFirstModelRef(cObj.getAsJsonObject("model"));
+                    String key = extractModelBoneKeyFromRef(modelRef);
+                    String whenStr = firstWhenString(cObj.get("when"));
+                    if (key != null && whenStr != null) {
+                        registerBoneAsset(out, key, new BoneAsset(
+                                buildCmdStringStack(base, itemModelId, whenStr),
+                                ModelBlueprint.DISPLAY_HEAD));
+                    }
                 }
-                JsonObject entry = e.getAsJsonObject();
-                int threshold = (int) parseDouble(entry.get("threshold"), -1);
-                if (threshold < 0 || !entry.has("model") || !entry.get("model").isJsonObject()) {
-                    continue;
+            }
+            if (node.has("fallback") && node.get("fallback").isJsonObject()) {
+                walkItemDefNode(node.getAsJsonObject("fallback"), base, itemModelId, out);
+            }
+            return;
+        }
+
+        if (type.endsWith("condition")) {
+            if (node.has("on_true") && node.get("on_true").isJsonObject()) {
+                walkItemDefNode(node.getAsJsonObject("on_true"), base, itemModelId, out);
+            }
+            if (node.has("on_false") && node.get("on_false").isJsonObject()) {
+                walkItemDefNode(node.getAsJsonObject("on_false"), base, itemModelId, out);
+            }
+            return;
+        }
+
+        if (type.endsWith("composite") && node.has("models") && node.get("models").isJsonArray()) {
+            for (JsonElement m : node.getAsJsonArray("models")) {
+                if (m.isJsonObject()) {
+                    walkItemDefNode(m.getAsJsonObject(), base, itemModelId, out);
                 }
-                String modelRef = stringOr(entry.getAsJsonObject("model"), "model", "");
-                String key = extractModelBoneKeyFromRef(modelRef);
-                if (key != null) {
-                    out.putIfAbsent(key, new BoneAsset(buildCmdStack(base, threshold), ModelBlueprint.DISPLAY_HEAD));
-                }
+            }
+            return;
+        }
+
+        // Direct single model inside an item definition (e.g. assets/modelengine/items/knight/head.json)
+        if (itemModelId != null) {
+            String modelRef = findFirstModelRef(node);
+            String key = extractModelBoneKeyFromRef(modelRef);
+            if (key != null) {
+                registerBoneAsset(out, key, new BoneAsset(
+                        buildItemModelStack(base, itemModelId), ModelBlueprint.DISPLAY_HEAD));
             }
         }
     }
 
-    /** Reads ModelEngine R4 {@code model_data.json} if present. */
+    private static @Nullable String findFirstModelRef(JsonObject node) {
+        String direct = stringOr(node, "model", "");
+        if (!direct.isEmpty()) {
+            return direct;
+        }
+        if (node.has("models") && node.get("models").isJsonArray()) {
+            for (JsonElement m : node.getAsJsonArray("models")) {
+                if (m.isJsonObject()) {
+                    String found = findFirstModelRef(m.getAsJsonObject());
+                    if (found != null) {
+                        return found;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private static @Nullable String firstWhenString(@Nullable JsonElement when) {
+        if (when == null || when.isJsonNull()) {
+            return null;
+        }
+        if (when.isJsonPrimitive()) {
+            return when.getAsString();
+        }
+        if (when.isJsonArray() && !when.getAsJsonArray().isEmpty() && when.getAsJsonArray().get(0).isJsonPrimitive()) {
+            return when.getAsJsonArray().get(0).getAsString();
+        }
+        return null;
+    }
+
+    /** Reads ModelEngine R4 {@code model_data.json} if present (supports flat and nested formats). */
     private static void scanModelDataJson(Path file, Material defaultMaterial,
                                           Map<String, BoneAsset> out, Map<String, Byte> displayTypes) {
         try {
@@ -569,24 +691,33 @@ public final class ModelEngineLoader {
                 return;
             }
             JsonObject root = parsed.getAsJsonObject();
-            // R4 model_data.json maps "<model>:<bone>" or "<model>/<bone>" -> int CMD (or nested object).
             for (Map.Entry<String, JsonElement> entry : root.entrySet()) {
-                String k = entry.getKey().toLowerCase(Locale.ROOT);
+                String k = sanitizeId(entry.getKey());
                 if (entry.getValue().isJsonPrimitive() && entry.getValue().getAsJsonPrimitive().isNumber()) {
                     int cmd = entry.getValue().getAsInt();
-                    String normalized = k.replace(':', '/');
-                    String key = extractModelBoneKey(normalized);
+                    String key = extractModelBoneKey(k.replace(':', '/'));
                     if (key != null) {
-                        out.putIfAbsent(key, new BoneAsset(buildCmdStack(defaultMaterial, cmd),
+                        registerBoneAsset(out, key, new BoneAsset(
+                                buildCmdFloatStack(defaultMaterial, null, (float) cmd),
                                 displayTypes.getOrDefault(key, ModelBlueprint.DISPLAY_HEAD)));
                     }
                 } else if (entry.getValue().isJsonObject()) {
                     JsonObject sub = entry.getValue().getAsJsonObject();
                     for (Map.Entry<String, JsonElement> boneEntry : sub.entrySet()) {
+                        String boneKey = k + "/" + sanitizeId(boneEntry.getKey());
                         if (boneEntry.getValue().isJsonPrimitive() && boneEntry.getValue().getAsJsonPrimitive().isNumber()) {
-                            String key = k + "/" + boneEntry.getKey().toLowerCase(Locale.ROOT);
-                            out.putIfAbsent(key, new BoneAsset(buildCmdStack(defaultMaterial, boneEntry.getValue().getAsInt()),
-                                    displayTypes.getOrDefault(key, ModelBlueprint.DISPLAY_HEAD)));
+                            registerBoneAsset(out, boneKey, new BoneAsset(
+                                    buildCmdFloatStack(defaultMaterial, null, boneEntry.getValue().getAsFloat()),
+                                    displayTypes.getOrDefault(boneKey, ModelBlueprint.DISPLAY_HEAD)));
+                        } else if (boneEntry.getValue().isJsonObject()) {
+                            JsonObject bo = boneEntry.getValue().getAsJsonObject();
+                            double cmd = parseDouble(bo.has("id") ? bo.get("id") : bo.get("data"), -1.0);
+                            if (cmd >= 0.0) {
+                                Material mat = bo.has("item") ? resolveMaterial(stringOr(bo, "item", "")) : defaultMaterial;
+                                registerBoneAsset(out, boneKey, new BoneAsset(
+                                        buildCmdFloatStack(mat, null, (float) cmd),
+                                        displayTypes.getOrDefault(boneKey, ModelBlueprint.DISPLAY_HEAD)));
+                            }
                         }
                     }
                 }
@@ -596,8 +727,26 @@ public final class ModelEngineLoader {
         }
     }
 
+    private static void registerBoneAsset(Map<String, BoneAsset> out, String key, BoneAsset asset) {
+        out.putIfAbsent(key, asset);
+        String shortKey = shortenNestedKey(key);
+        if (shortKey != null) {
+            out.putIfAbsent(shortKey, asset);
+        }
+    }
+
+    /** Turns {@code "knight/sub/head"} into {@code "knight/head"} so nested bone folders still match. */
+    private static @Nullable String shortenNestedKey(String key) {
+        int first = key.indexOf('/');
+        int last = key.lastIndexOf('/');
+        if (first > 0 && last > first) {
+            return key.substring(0, first) + "/" + key.substring(last + 1);
+        }
+        return null;
+    }
+
     /** Extracts {@code "<model>/<bone>"} from a model reference like {@code "modelengine:entity/knight/head"}. */
-    static @Nullable String extractModelBoneKeyFromRef(String modelRef) {
+    static @Nullable String extractModelBoneKeyFromRef(@Nullable String modelRef) {
         if (modelRef == null || modelRef.isBlank()) {
             return null;
         }
@@ -605,7 +754,7 @@ public final class ModelEngineLoader {
         int colon = lower.indexOf(':');
         String ns = colon >= 0 ? lower.substring(0, colon) : "minecraft";
         String path = colon >= 0 ? lower.substring(colon + 1) : lower;
-        if (!ns.equals("modelengine") && !path.startsWith("entity/")) {
+        if (!MEG_NAMESPACES.contains(ns) && !path.startsWith("entity/")) {
             return null;
         }
         return extractModelBoneKey(path);
@@ -620,22 +769,33 @@ public final class ModelEngineLoader {
         return p;
     }
 
-    private static ItemStack buildCmdStack(Material base, int customModelData) {
+    private static ItemStack buildCmdFloatStack(Material base, @Nullable String itemModelId, float customModelData) {
         ItemStack stack = ItemStack.of(base)
                 .with(DataComponents.CUSTOM_MODEL_DATA,
-                        new CustomModelData(List.of((float) customModelData), List.of(), List.of(), List.of()));
-        if (isDyeable(base)) {
-            stack = stack.with(DataComponents.DYED_COLOR, WHITE_DYE);
+                        new CustomModelData(List.of(customModelData), List.of(), List.of(), List.of()));
+        if (itemModelId != null && !itemModelId.isBlank()) {
+            stack = stack.with(DataComponents.ITEM_MODEL, itemModelId);
         }
-        return stack;
+        return applyDefaultDye(stack, base);
+    }
+
+    private static ItemStack buildCmdStringStack(Material base, @Nullable String itemModelId, String cmdString) {
+        ItemStack stack = ItemStack.of(base)
+                .with(DataComponents.CUSTOM_MODEL_DATA,
+                        new CustomModelData(List.of(), List.of(), List.of(cmdString), List.of()));
+        if (itemModelId != null && !itemModelId.isBlank()) {
+            stack = stack.with(DataComponents.ITEM_MODEL, itemModelId);
+        }
+        return applyDefaultDye(stack, base);
     }
 
     private static ItemStack buildItemModelStack(Material base, String itemModel) {
         ItemStack stack = ItemStack.of(base).with(DataComponents.ITEM_MODEL, itemModel);
-        if (isDyeable(base)) {
-            stack = stack.with(DataComponents.DYED_COLOR, WHITE_DYE);
-        }
-        return stack;
+        return applyDefaultDye(stack, base);
+    }
+
+    private static ItemStack applyDefaultDye(ItemStack stack, Material base) {
+        return isDyeable(base) ? stack.with(DataComponents.DYED_COLOR, WHITE_DYE) : stack;
     }
 
     private static boolean isDyeable(Material material) {

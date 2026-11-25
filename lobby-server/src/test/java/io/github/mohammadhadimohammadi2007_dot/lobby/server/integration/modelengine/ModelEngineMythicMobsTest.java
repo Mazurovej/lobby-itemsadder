@@ -205,9 +205,79 @@ class ModelEngineMythicMobsTest {
             long itemDisplays = spawned.stream().filter(p -> p.type() == EntityType.ITEM_DISPLAY).count();
             assertEquals(2L, itemDisplays, "knight blueprint should spawn 2 ItemDisplay bones (body + h_head)");
             assertFalse(metas.collect().isEmpty(), "bones should receive metadata packets");
+
+            // Also verify live /npc model switching on an existing vanilla player NPC
+            assertEquals(CommandResult.Type.SUCCESS, commands.execute(console, "npc create plain 2 65 0").getType());
+            lobby.renderer().refreshNow();
+            var modelSwitchSpawns = conn.trackIncoming(SpawnEntityPacket.class);
+            assertEquals(CommandResult.Type.SUCCESS, commands.execute(console, "npc model plain knight").getType());
+            lobby.renderer().refreshNow();
+            long switchedDisplays = modelSwitchSpawns.collect().stream()
+                    .filter(p -> p.type() == EntityType.ITEM_DISPLAY).count();
+            assertEquals(2L, switchedDisplays,
+                    "running /npc model on an existing NPC should cleanly spawn its 2 ItemDisplay bones");
         } finally {
             LobbyServerTestAccess.stop(lobby);
         }
+    }
+
+    @Test
+    void supports1214SelectStringCmdAndQuotedMythicSkill(Env env) throws Exception {
+        Path megDir = dir.resolve("meg_select");
+        Files.createDirectories(megDir.resolve("blueprints"));
+        Files.writeString(megDir.resolve("blueprints/knight.bbmodel"), SAMPLE_BBMODEL);
+
+        Path packZip = dir.resolve("merged_select.zip");
+        Files.createDirectories(packZip.getParent());
+        try (ZipOutputStream zos = new ZipOutputStream(Files.newOutputStream(packZip), StandardCharsets.UTF_8)) {
+            zos.putNextEntry(new ZipEntry("assets/minecraft/items/bone.json"));
+            zos.write("""
+                    {
+                      "model": {
+                        "type": "minecraft:select",
+                        "property": "minecraft:custom_model_data",
+                        "cases": [
+                          {
+                            "when": "knight_body",
+                            "model": { "type": "minecraft:model", "model": "modelengine:entity/knight/body" }
+                          }
+                        ],
+                        "fallback": {
+                          "type": "minecraft:range_dispatch",
+                          "property": "minecraft:custom_model_data",
+                          "entries": [
+                            {
+                              "threshold": 2002,
+                              "model": { "type": "minecraft:model", "model": "modelengine:knight/head" }
+                            }
+                          ]
+                        }
+                      }
+                    }
+                    """.getBytes(StandardCharsets.UTF_8));
+            zos.closeEntry();
+        }
+
+        Map<String, ModelBlueprint> bps = ModelEngineLoader.load(megDir, List.of(packZip), "bone");
+        ModelBlueprint bp = bps.get("knight");
+        assertNotNull(bp);
+        assertEquals(2, bp.visibleBoneCount(), "both select(string) and fallback range_dispatch(float) bones should map");
+        assertEquals("knight_body",
+                bp.bones().get(0).displayItem().get(DataComponents.CUSTOM_MODEL_DATA).strings().getFirst());
+        assertEquals(2002f,
+                bp.bones().get(1).displayItem().get(DataComponents.CUSTOM_MODEL_DATA).floats().getFirst());
+
+        Path mmDir = dir.resolve("mm_quoted");
+        Files.createDirectories(mmDir.resolve("Mobs"));
+        Files.writeString(mmDir.resolve("Mobs/quoted.yml"), """
+                QuotedKnight:
+                  Type: ARMOR_STAND
+                  Skills:
+                    - meg:model{id="knight";scale=1.5} @self ~onSpawn
+                """);
+        var mobs = MythicMobsLoader.load(mmDir);
+        assertEquals("knight", mobs.get("quotedknight").modelId());
+        assertEquals(1.5, mobs.get("quotedknight").scale(), 1e-6);
     }
 
     private static void writeMergedPack(Path zipPath) throws Exception {

@@ -102,8 +102,15 @@ final class NpcModelCommands {
             data.modelAnimation(rawAnim);
         }
         support.npcs.changed(data);
-        support.reply(sender, "Set model of <white>" + data.name() + "</white> to <aqua>" + bp.id()
-                + "</aqua> (" + bp.visibleBoneCount() + " bone(s), animation: <yellow>" + data.modelAnimation() + "</yellow>).");
+        if (bp.visibleBoneCount() == 0) {
+            support.reply(sender, "<yellow>Set model of <white>" + data.name() + "</white> to <aqua>" + bp.id()
+                    + "</aqua>, but <red>0/" + bp.bones().size()
+                    + " bones matched the resource pack</red> — falling back to vanilla entity until the merged pack contains its bone models.");
+        } else {
+            support.reply(sender, "Set model of <white>" + data.name() + "</white> to <aqua>" + bp.id()
+                    + "</aqua> (" + bp.visibleBoneCount() + "/" + bp.bones().size()
+                    + " bone(s), animation: <yellow>" + data.modelAnimation() + "</yellow>).");
+        }
     }
 
     private Command animation(ArgumentWord npc) {
@@ -194,7 +201,19 @@ final class NpcModelCommands {
             data.modelAnimation(def.modelAnimation());
         }
         support.npcs.changed(data);
-        String modelNote = def.hasModel() ? " with model <aqua>" + def.modelId() + "</aqua>" : "";
+        String modelNote;
+        if (!def.hasModel()) {
+            modelNote = " <gray>(no ModelEngine model in mob YAML; use /npc model " + data.name() + " <model>)</gray>";
+        } else {
+            ModelBlueprint bp = data.resolvedBlueprint();
+            if (bp == null) {
+                modelNote = " <red>(model '" + def.modelId() + "' not found in modelengine/blueprints/)</red>";
+            } else if (bp.visibleBoneCount() == 0) {
+                modelNote = " <red>(model '" + bp.id() + "' has 0/" + bp.bones().size() + " mapped bones in pack)</red>";
+            } else {
+                modelNote = " with model <aqua>" + bp.id() + "</aqua> (" + bp.visibleBoneCount() + " bone(s))";
+            }
+        }
         support.reply(sender, "Spawned MythicMob <yellow>" + def.id() + "</yellow> as NPC <white>"
                 + data.name() + "</white>" + modelNote + ".");
     }
@@ -212,8 +231,15 @@ final class NpcModelCommands {
                 support.reply(sender, "<gray>No ModelEngine blueprints loaded (put .bbmodel files in modelengine/blueprints/).");
                 return;
             }
+            List<String> summary = ids.stream().map(id -> {
+                ModelBlueprint bp = meg.blueprint(id);
+                if (bp == null) {
+                    return id;
+                }
+                return id + " <gray>(" + bp.visibleBoneCount() + "/" + bp.bones().size() + " bones)</gray>";
+            }).toList();
             support.reply(sender, "<green>ModelEngine blueprints (" + ids.size() + "):</green> <white>"
-                    + String.join(", ", ids) + "</white>");
+                    + String.join(", ", summary) + "</white>");
         });
         return command;
     }
@@ -231,8 +257,12 @@ final class NpcModelCommands {
                 support.reply(sender, "<gray>No MythicMobs definitions loaded (put *.yml files in mythicmobs/Mobs/).");
                 return;
             }
+            List<String> summary = ids.stream().map(id -> {
+                MythicMobDefinition def = mm.mob(id);
+                return (def != null && def.hasModel()) ? id + " <gray>(model: " + def.modelId() + ")</gray>" : id;
+            }).toList();
             support.reply(sender, "<green>MythicMobs (" + ids.size() + "):</green> <white>"
-                    + String.join(", ", ids) + "</white>");
+                    + String.join(", ", summary) + "</white>");
         });
         return command;
     }

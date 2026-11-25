@@ -28,11 +28,11 @@ import java.util.stream.Stream;
 public final class MythicMobsLoader {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(MythicMobsLoader.class);
-    /** Matches {@code model{mid=knight;scale=1.5}} or {@code meg:model{m=knight}} in MythicMobs Skills. */
+    /** Matches {@code model{mid=knight;scale=1.5}}, {@code meg:model{id="knight"}}, or {@code state{mid=...}}. */
     private static final Pattern MODEL_SKILL = Pattern.compile(
-            "(?:meg:)?model\\s*\\{([^}]*)}", Pattern.CASE_INSENSITIVE);
+            "(?:(?:meg|modelengine):)?(?:model|state)\\s*\\{([^}]*)}", Pattern.CASE_INSENSITIVE);
     private static final Pattern SKILL_PARAM = Pattern.compile(
-            "([a-zA-Z0-9_]+)\\s*=\\s*([^;\\s}]+)");
+            "([a-zA-Z0-9_]+)\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^;\\s}]+))");
 
     private MythicMobsLoader() {
     }
@@ -93,12 +93,19 @@ public final class MythicMobsLoader {
             scale = 1.0;
         }
 
-        // Direct Model: field (either "Model: knight" or "Model: { Id: knight }")
+        // Direct Model: field (either "Model: knight" or "Model: { Id: knight, Scale: 1.2 }")
         String modelId = "";
         ConfigurationNode modelNode = node.node("Model");
         if (!modelNode.virtual()) {
             if (modelNode.isMap()) {
-                modelId = modelNode.node("Id").getString(modelNode.node("Model").getString("")).strip();
+                modelId = firstNonBlank(
+                        modelNode.node("Id").getString(""),
+                        modelNode.node("Mid").getString(""),
+                        modelNode.node("Model").getString(""));
+                double mScale = modelNode.node("Scale").getDouble(-1.0);
+                if (mScale > 0) {
+                    scale = mScale;
+                }
             } else {
                 modelId = modelNode.getString("").strip();
             }
@@ -112,7 +119,11 @@ public final class MythicMobsLoader {
                 Matcher m = MODEL_SKILL.matcher(raw);
                 if (m.find()) {
                     Map<String, String> params = parseParams(m.group(1));
-                    String mid = params.getOrDefault("mid", params.getOrDefault("m", ""));
+                    String mid = firstNonBlank(
+                            params.getOrDefault("mid", ""),
+                            params.getOrDefault("m", ""),
+                            params.getOrDefault("id", ""),
+                            params.getOrDefault("model", ""));
                     if (!mid.isBlank() && modelId.isBlank()) {
                         modelId = mid.strip();
                     }
@@ -136,17 +147,30 @@ public final class MythicMobsLoader {
                 entityType,
                 display,
                 scale,
-                modelId.toLowerCase(Locale.ROOT),
+                modelId.toLowerCase(Locale.ROOT).replace(' ', '_'),
                 "idle",
                 equipment
         );
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v.strip();
+            }
+        }
+        return "";
     }
 
     private static Map<String, String> parseParams(String inside) {
         Map<String, String> map = new LinkedHashMap<>();
         Matcher matcher = SKILL_PARAM.matcher(inside);
         while (matcher.find()) {
-            map.put(matcher.group(1).toLowerCase(Locale.ROOT), matcher.group(2).strip());
+            String val = matcher.group(2) != null ? matcher.group(2)
+                    : (matcher.group(3) != null ? matcher.group(3) : matcher.group(4));
+            if (val != null) {
+                map.put(matcher.group(1).toLowerCase(Locale.ROOT), val.strip());
+            }
         }
         return map;
     }
