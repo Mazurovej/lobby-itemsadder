@@ -221,11 +221,11 @@ public final class ModelBlueprint {
             double ry = bone.restRotation().y() + animRot.y();
             double rz = bone.restRotation().z() + animRot.z();
             if (bone.head()) {
-                // quatFromBlockbenchEuler negates degX and degY:
-                //   +headYaw (clockwise/West) -> -angle around +Y -> +degY
-                //   -headPitch (looking up)   -> -angle around +X -> +degX (so subtract headPitch)
+                // quatFromBlockbenchEuler uses (-degX, +degY, -degZ):
+                //   +headYaw (clockwise/West) -> -angle around +Y -> subtract headYaw
+                //   -headPitch (looking up)   -> -angle around +X -> subtract headPitch (so -(-pitch) = +pitch -> -hx)
                 rx -= clampedHeadPitch;
-                ry += clampedHeadYaw;
+                ry -= clampedHeadYaw;
             }
             float[] localRot = quatFromBlockbenchEuler(rx, ry, rz);
 
@@ -308,13 +308,16 @@ public final class ModelBlueprint {
     }
 
     /**
-     * Converts Blockbench Euler degrees (applied in Z-Y-X order, with Blockbench's X/Y sign convention)
-     * into a unit quaternion {@code [x, y, z, w]}.
+     * Converts Blockbench Euler degrees (applied in Z-Y-X order) into a unit quaternion
+     * {@code [x, y, z, w]} in Minecraft South-facing (+Z) entity space.
+     *
+     * <p>Conjugating a right-handed rotation by {@code R_y(180°) = diag(-1, +1, -1)} negates the
+     * X and Z rotation axes while preserving Y: {@code (-degX, +degY, -degZ)}.
      */
     static float[] quatFromBlockbenchEuler(double degX, double degY, double degZ) {
         double hx = Math.toRadians(-degX) * 0.5;
-        double hy = Math.toRadians(-degY) * 0.5;
-        double hz = Math.toRadians(degZ) * 0.5;
+        double hy = Math.toRadians(degY) * 0.5;
+        double hz = Math.toRadians(-degZ) * 0.5;
 
         double cx = Math.cos(hx), sx = Math.sin(hx);
         double cy = Math.cos(hy), sy = Math.sin(hy);
