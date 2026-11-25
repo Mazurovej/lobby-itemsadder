@@ -69,6 +69,9 @@ public final class NpcCodec implements DataCodec<NpcData> {
         data.showInTab(node.node("show-in-tab").getBoolean(false));
         readEquipment(node.node("equipment"), data, name);
         data.viewDistance(node.node("view-distance").getDouble(NpcData.DEFAULT_VIEW_DISTANCE));
+        data.model(node.node("model").getString(""));
+        data.modelAnimation(node.node("model-animation").getString("idle"));
+        data.mythicMob(node.node("mythic-mob").getString(""));
         data.permission(node.node("permission").getString(""));
         long cooldown = Math.clamp(node.node("click-cooldown").getLong(DEFAULT_CLICK_COOLDOWN_MILLIS),
                 0, MAX_CLICK_COOLDOWN_MILLIS);
@@ -119,6 +122,15 @@ public final class NpcCodec implements DataCodec<NpcData> {
             node.node("equipment", slotName(item.getKey())).set(item.getValue().serialize());
         }
         node.node("view-distance").set(data.viewDistance());
+        if (data.hasModel()) {
+            node.node("model").set(data.model());
+            if (!data.modelAnimation().isEmpty() && !data.modelAnimation().equals("idle")) {
+                node.node("model-animation").set(data.modelAnimation());
+            }
+        }
+        if (!data.mythicMob().isEmpty()) {
+            node.node("mythic-mob").set(data.mythicMob());
+        }
         node.node("permission").set(data.permission());
         if (!data.allActions().isEmpty()) {
             node.node("click-cooldown").set(data.clickCooldownMillis());

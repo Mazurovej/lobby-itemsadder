@@ -88,8 +88,14 @@ public final class Npc implements ClientObject {
     private record ScaleState(double scale, int revision) {
     }
 
+    /** Interpolation duration in ticks for ModelEngine ItemDisplay bone updates (matches 5-tick refresh). */
+    private static final int BONE_INTERP_TICKS = 5;
+    private static final double CLIENT_RANGE_PER_UNIT = 64.0;
+
     private final NpcData data;
     private final Hologram.Services services;
+    /** Epoch used to compute continuous looping animation time for ModelEngine blueprints. */
+    private final long animEpochMillis = System.currentTimeMillis();
     /** The rotation each viewer last got, packed into a long, so unchanged turns are not sent again. */
     private final Map<UUID, Long> lastLook = new ConcurrentHashMap<>();
     /** Viewers whose scale is currently overridden by {@code scale_up_when_looking}. */
@@ -152,13 +158,17 @@ public final class Npc implements ClientObject {
     }
 
     /**
-     * The body first (its entity id is always the first one), then the name tag, then the seat of a
-     * sitting NPC.
+     * The body first (its entity id is always the first one), then the name tag, then either the
+     * ModelEngine R4 ItemDisplay bones (for modern clients) or the seat of a sitting player NPC.
      */
     @Override
     public List<EntityPart> render(Object key, Player viewer) {
         Key npcKey = key instanceof Key known ? known : new Key(new HologramText.Variant(false, null), false);
         boolean legacy = npcKey.text().legacy();
+        var blueprint = !legacy ? data.resolvedBlueprint() : null;
+        if (blueprint != null && blueprint.visibleBoneCount() > 0) {
+            return renderModel(blueprint, viewer, npcKey);
+        }
         List<EntityPart> parts = new ArrayList<>();
         parts.add(body(viewer, npcKey));
         if (!data.nameTag().lines().isEmpty()) {
@@ -170,6 +180,51 @@ public final class Npc implements ClientObject {
         }
         if (data.pose() == NpcPose.SITTING) {
             parts.add(seat(legacy));
+        }
+        return parts;
+    }
+
+    /** Renders a ModelEngine R4 blueprint: Interaction hitbox (part 0), optional name tag, then ItemDisplay bones. */
+    private List<EntityPart> renderModel(
+            io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelBlueprint blueprint,
+            Player viewer, Key key) {
+        double effectiveScale = data.scale();
+        Pos origin = data.position().withView(0, 0);
+        List<EntityPart> parts = new ArrayList<>(1 + 1 + blueprint.visibleBoneCount());
+
+        // Part 0: invisible Interaction hitbox for left/right clicks.
+        Map<Integer, Metadata.Entry<?>> hitboxMeta = new HashMap<>(4);
+        hitboxMeta.put(MetadataDef.Interaction.WIDTH.index(),
+                Metadata.Float((float) data.widthForScale(effectiveScale)));
+        hitboxMeta.put(MetadataDef.Interaction.HEIGHT.index(),
+                Metadata.Float((float) data.heightForScale(effectiveScale)));
+        hitboxMeta.put(MetadataDef.Interaction.RESPONSIVE.index(), Metadata.Boolean(true));
+        parts.add(new EntityPart(EntityType.INTERACTION, origin, hitboxMeta));
+
+        // Optional name tag above the model.
+        if (!data.nameTag().lines().isEmpty()) {
+            parts.addAll(HologramText.parts(data.nameTag(), services.text(), viewer, false));
+        }
+
+        // ItemDisplay bones in rest pose (viewerPackets animates & turns them smoothly).
+        List<io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelBlueprint.BonePose> poses =
+                blueprint.samplePose(data.modelAnimation(), 0.0, data.position().yaw(), 0f, 0f, effectiveScale);
+        float viewRange = (float) Math.max(1.0, data.viewDistance() / CLIENT_RANGE_PER_UNIT);
+        for (var pose : poses) {
+            var bone = blueprint.bones().get(pose.boneIndex());
+            Map<Integer, Metadata.Entry<?>> meta = new HashMap<>(10);
+            if (data.glowing()) {
+                meta.put(MetadataDef.ENTITY_FLAGS.index(), Metadata.Byte(GLOWING));
+            }
+            meta.put(MetadataDef.Display.TRANSLATION.index(), Metadata.Vector3(pose.translation()));
+            meta.put(MetadataDef.Display.ROTATION_LEFT.index(), Metadata.Quaternion(pose.rotation()));
+            meta.put(MetadataDef.Display.SCALE.index(), Metadata.Vector3(pose.scale()));
+            meta.put(MetadataDef.Display.TRANSFORMATION_INTERPOLATION_DURATION.index(), Metadata.VarInt(BONE_INTERP_TICKS));
+            meta.put(MetadataDef.Display.INTERPOLATION_DELAY.index(), Metadata.VarInt(0));
+            meta.put(MetadataDef.Display.VIEW_RANGE.index(), Metadata.Float(viewRange));
+            meta.put(MetadataDef.ItemDisplay.DISPLAYED_ITEM.index(), Metadata.ItemStack(bone.displayItem()));
+            meta.put(MetadataDef.ItemDisplay.DISPLAY_TYPE.index(), Metadata.Byte(bone.displayType()));
+            parts.add(new EntityPart(EntityType.ITEM_DISPLAY, origin, meta));
         }
         return parts;
     }
@@ -240,19 +295,24 @@ public final class Npc implements ClientObject {
 
     @Override
     public boolean hasViewerPackets() {
-        return data.turnToPlayer() || data.scaleUpWhenLooking() || !lastLookScale.isEmpty();
+        return data.turnToPlayer() || data.scaleUpWhenLooking() || !lastLookScale.isEmpty() || data.hasModel();
     }
 
     /**
-     * Sends per-viewer rotation packets (when {@code turn_to_player} is on) and per-viewer scale
-     * attribute + name-tag height updates (when {@code scale_up_when_looking} is on). Unchanged state
-     * sends nothing and allocates no packet list.
+     * Sends per-viewer rotation packets (when {@code turn_to_player} is on), per-viewer scale
+     * attribute + name-tag height updates (when {@code scale_up_when_looking} is on), and
+     * ModelEngine R4 bone animation/head-tracking updates. Unchanged state sends nothing.
      */
     @Override
     public List<ServerPacket> viewerPackets(Player viewer, List<Integer> entityIds, boolean justSpawned) {
         if (entityIds.isEmpty()) {
             return List.of();
         }
+        var blueprint = !services.legacyClient().test(viewer) ? data.resolvedBlueprint() : null;
+        if (blueprint != null && blueprint.visibleBoneCount() > 0) {
+            return modelViewerPackets(blueprint, viewer, entityIds, justSpawned);
+        }
+
         int body = entityIds.get(BODY);
         List<ServerPacket> packets = null;
 
@@ -312,6 +372,108 @@ public final class Npc implements ClientObject {
         return packets == null ? List.of() : packets;
     }
 
+    /** Per-viewer bone animation, head/body turning, and look-scaling for a ModelEngine R4 NPC. */
+    private List<ServerPacket> modelViewerPackets(
+            io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelBlueprint blueprint,
+            Player viewer, List<Integer> entityIds, boolean justSpawned) {
+        int boneStart = 1 + (data.nameTag().lines().isEmpty() ? 0 : 1);
+        int boneCount = blueprint.visibleBoneCount();
+        if (entityIds.size() < boneStart + boneCount) {
+            return List.of();
+        }
+
+        UUID viewerId = viewer.getUuid();
+        Pos npc = data.position();
+
+        // 1. Look-scaling state
+        double effectiveScale = data.scale();
+        boolean scaleChanged = false;
+        ScaleState previousScale = lastLookScale.get(viewerId);
+        if (data.scaleUpWhenLooking() || previousScale != null) {
+            if (data.scaleUpWhenLooking()) {
+                double probeScale = previousScale != null ? Math.max(data.scale(), previousScale.scale()) : data.scale();
+                double targetScale = isLookingAt(viewer, probeScale) ? data.lookedScale() : data.scale();
+                if (Double.compare(targetScale, data.scale()) != 0) {
+                    int rev = configRevision.get();
+                    effectiveScale = targetScale;
+                    if (justSpawned || previousScale == null
+                            || Double.compare(previousScale.scale(), targetScale) != 0
+                            || previousScale.revision() != rev) {
+                        lastLookScale.put(viewerId, new ScaleState(targetScale, rev));
+                        scaleChanged = true;
+                    }
+                } else if (lastLookScale.remove(viewerId) != null) {
+                    scaleChanged = true;
+                }
+            } else if (lastLookScale.remove(viewerId) != null) {
+                scaleChanged = true;
+            }
+        }
+
+        // 2. Turn-to-player angles (head bones if present, else whole body yaw)
+        float bodyYaw = npc.yaw();
+        float headYawRel = 0f;
+        float headPitch = 0f;
+        boolean lookChanged = false;
+        if (data.turnToPlayer()) {
+            Pos target = viewer.getPosition();
+            if (npc.distanceSquared(target) <= data.turnDistance() * data.turnDistance()) {
+                double dx = target.x() - npc.x();
+                double dz = target.z() - npc.z();
+                double dy = (target.y() + viewer.getEyeHeight()) - (npc.y() + blueprint.eyeHeight() * effectiveScale);
+                float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+                float targetPitch = (float) -Math.toDegrees(Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)));
+                if (blueprint.hasHeadBone()) {
+                    headYawRel = wrapDegrees(targetYaw - bodyYaw);
+                    headPitch = targetPitch;
+                } else {
+                    bodyYaw = targetYaw;
+                }
+            }
+            long packed = pack(round(blueprint.hasHeadBone() ? headYawRel : bodyYaw), round(headPitch));
+            Long previous = lastLook.put(viewerId, packed);
+            lookChanged = previous == null || previous != packed;
+        }
+
+        // 3. Animation check
+        boolean animated = blueprint.animation(data.modelAnimation()) != null;
+        if (!animated && !justSpawned && !lookChanged && !scaleChanged) {
+            return List.of();
+        }
+
+        double elapsedSec = (System.currentTimeMillis() - animEpochMillis) / 1000.0;
+        var poses = blueprint.samplePose(data.modelAnimation(), elapsedSec, bodyYaw, headYawRel, headPitch, effectiveScale);
+        List<ServerPacket> packets = new ArrayList<>(poses.size() + 1);
+        for (int i = 0; i < poses.size(); i++) {
+            var pose = poses.get(i);
+            int boneEntityId = entityIds.get(boneStart + i);
+            Map<Integer, Metadata.Entry<?>> meta = Map.of(
+                    MetadataDef.Display.INTERPOLATION_DELAY.index(), Metadata.VarInt(0),
+                    MetadataDef.Display.TRANSFORMATION_INTERPOLATION_DURATION.index(), Metadata.VarInt(BONE_INTERP_TICKS),
+                    MetadataDef.Display.TRANSLATION.index(), Metadata.Vector3(pose.translation()),
+                    MetadataDef.Display.ROTATION_LEFT.index(), Metadata.Quaternion(pose.rotation()),
+                    MetadataDef.Display.SCALE.index(), Metadata.Vector3(pose.scale())
+            );
+            packets.add(new net.minestom.server.network.packet.server.play.EntityMetaDataPacket(boneEntityId, meta));
+        }
+        if (scaleChanged && !data.nameTag().lines().isEmpty() && entityIds.size() > NAME_TAG) {
+            Pos namePos = new Pos(npc.x(), npc.y() + data.heightForScale(effectiveScale) + data.nameOffset(), npc.z());
+            packets.add(new EntityTeleportPacket(entityIds.get(NAME_TAG), namePos, Vec.ZERO, 0, false));
+        }
+        return packets;
+    }
+
+    private static float wrapDegrees(float deg) {
+        float wrapped = deg % 360f;
+        if (wrapped >= 180f) {
+            wrapped -= 360f;
+        }
+        if (wrapped < -180f) {
+            wrapped += 360f;
+        }
+        return wrapped;
+    }
+
     private void appendScalePackets(List<ServerPacket> packets, Player viewer, List<Integer> entityIds,
                                     int bodyEntityId, double scale) {
         packets.add(new EntityAttributesPacket(bodyEntityId,
@@ -334,7 +496,7 @@ public final class Npc implements ClientObject {
         Pos viewerPos = viewer.getPosition();
         double maxDist = Math.min(data.lookScaleDistance(), data.viewDistance());
         double height = data.heightForScale(effectiveScale);
-        double halfW = Math.max(0.4, data.type().width()) * effectiveScale * 0.5 + LOOK_PADDING_XZ;
+        double halfW = data.widthForScale(effectiveScale) * 0.5 + LOOK_PADDING_XZ;
 
         double eyeX = viewerPos.x();
         double eyeY = viewerPos.y() + viewer.getEyeHeight();

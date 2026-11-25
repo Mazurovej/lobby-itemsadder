@@ -18,6 +18,8 @@ import java.util.regex.Pattern;
  * @param itemsAdder      ItemsAdder settings
  * @param voiceChat       Simple Voice Chat settings
  * @param badcoreSettings badcoreSettings GUI, bridge and MariaDB settings
+ * @param modelEngine     ModelEngine R4 blueprint & resource pack settings
+ * @param mythicMobs      MythicMobs mob definition settings
  */
 public record IntegrationsConfig(
         Database database,
@@ -29,7 +31,9 @@ public record IntegrationsConfig(
         MineSkin mineSkin,
         ItemsAdder itemsAdder,
         VoiceChat voiceChat,
-        BadcoreSettings badcoreSettings
+        BadcoreSettings badcoreSettings,
+        ModelEngine modelEngine,
+        MythicMobs mythicMobs
 ) {
 
     private static final int MAX_PORT = 65535;
@@ -189,6 +193,24 @@ public record IntegrationsConfig(
         }
     }
 
+    /** {@code modelengine:} section (ModelEngine R4 blueprints & bone models). Reloadable live. */
+    public record ModelEngine(
+            boolean enabled,
+            String dataPath,
+            String packZip,
+            String defaultItem
+    ) {
+        public static final ModelEngine DISABLED = new ModelEngine(false, "modelengine", "", "leather_horse_armor");
+    }
+
+    /** {@code mythicmobs:} section (MythicMobs Mobs/*.yml definitions for lobby NPCs). Reloadable live. */
+    public record MythicMobs(
+            boolean enabled,
+            String dataPath
+    ) {
+        public static final MythicMobs DISABLED = new MythicMobs(false, "mythicmobs");
+    }
+
     private static final Pattern SHA1_HEX = Pattern.compile("[0-9a-fA-F]{40}");
 
     /** True if any enabled integration needs the shared database pool. */
@@ -228,8 +250,27 @@ public record IntegrationsConfig(
         ItemsAdder itemsAdder = readItemsAdder(reader);
         VoiceChat voiceChat = readVoiceChat(reader);
         BadcoreSettings badcoreSettings = readBadcoreSettings(reader);
+        ModelEngine modelEngine = readModelEngine(reader);
+        MythicMobs mythicMobs = readMythicMobs(reader);
         return new IntegrationsConfig(database, luckPerms, liteBans, skinsRestorer, bridge, signedVelocity, mineSkin,
-                itemsAdder, voiceChat, badcoreSettings);
+                itemsAdder, voiceChat, badcoreSettings, modelEngine, mythicMobs);
+    }
+
+    private static ModelEngine readModelEngine(ConfigReader reader) {
+        boolean enabled = reader.bool("modelengine.enabled", false);
+        String dataPath = reader.string("modelengine.data-path", "modelengine").strip();
+        String packZip = reader.string("modelengine.pack-zip", "").strip();
+        String defaultItem = reader.string("modelengine.default-item", "leather_horse_armor").strip();
+        if (defaultItem.isEmpty()) {
+            defaultItem = "leather_horse_armor";
+        }
+        return new ModelEngine(enabled, dataPath, packZip, defaultItem);
+    }
+
+    private static MythicMobs readMythicMobs(ConfigReader reader) {
+        boolean enabled = reader.bool("mythicmobs.enabled", false);
+        String dataPath = reader.string("mythicmobs.data-path", "mythicmobs").strip();
+        return new MythicMobs(enabled, dataPath);
     }
 
     private static BadcoreSettings readBadcoreSettings(ConfigReader reader) {

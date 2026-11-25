@@ -69,6 +69,9 @@ public final class NpcData {
     private volatile boolean showInTab;
     private volatile Map<EquipmentSlot, io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemSpec> equipmentSpecs = Map.of();
     private volatile double viewDistance = DEFAULT_VIEW_DISTANCE;
+    private volatile String model = "";
+    private volatile String modelAnimation = "idle";
+    private volatile String mythicMob = "";
     private volatile String permission = "";
     private volatile Map<NpcTrigger, Actions> actions = Map.of();
     private volatile long clickCooldownMillis = NpcCodec.DEFAULT_CLICK_COOLDOWN_MILLIS;
@@ -320,6 +323,50 @@ public final class NpcData {
         viewDistance = Math.clamp(value, HologramData.MIN_VIEW_DISTANCE, HologramData.MAX_VIEW_DISTANCE);
     }
 
+    /** ModelEngine R4 blueprint id, or {@code ""} for a standard entity NPC. */
+    public String model() {
+        return model;
+    }
+
+    public boolean hasModel() {
+        return !model.isEmpty();
+    }
+
+    /** Sets the ModelEngine R4 blueprint id (or empty/{@code "none"} to clear) and updates the name tag height. */
+    public void model(String value) {
+        String trimmed = value == null ? "" : value.strip().toLowerCase(java.util.Locale.ROOT);
+        model = trimmed.equals("none") ? "" : trimmed;
+        placeNameTag();
+    }
+
+    /** Looping animation name played on a modeled NPC (default {@code "idle"}, {@code "none"} for rest pose). */
+    public String modelAnimation() {
+        return modelAnimation;
+    }
+
+    public void modelAnimation(String value) {
+        String trimmed = value == null ? "idle" : value.strip().toLowerCase(java.util.Locale.ROOT);
+        modelAnimation = trimmed.isEmpty() ? "idle" : trimmed;
+    }
+
+    /** MythicMobs mob id this NPC was spawned from, or {@code ""}. */
+    public String mythicMob() {
+        return mythicMob;
+    }
+
+    public void mythicMob(String value) {
+        mythicMob = value == null ? "" : value.strip();
+    }
+
+    /** The active ModelEngine blueprint if {@link #model()} is set and loaded, else {@code null}. */
+    public @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelBlueprint resolvedBlueprint() {
+        if (model.isEmpty()) {
+            return null;
+        }
+        var service = io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService.Active.get();
+        return service == null ? null : service.blueprint(model);
+    }
+
     /** Permission needed to see the NPC, or {@code ""} for everyone. */
     public String permission() {
         return permission;
@@ -399,6 +446,9 @@ public final class NpcData {
         copy.scaleUpWhenLooking = scaleUpWhenLooking;
         copy.lookScaleMultiplier = lookScaleMultiplier;
         copy.lookScaleDistance = lookScaleDistance;
+        copy.model = model;
+        copy.modelAnimation = modelAnimation;
+        copy.mythicMob = mythicMob;
         copy.nameOffset(nameOffset);
         copy.showInTab = showInTab;
         copy.equipmentSpecs = equipmentSpecs;
@@ -442,8 +492,16 @@ public final class NpcData {
 
     /** How tall the NPC looks at an explicit {@code effectiveScale}. */
     public double heightForScale(double effectiveScale) {
-        double height = isPlayer() ? pose.playerHeight() : type.height();
+        var bp = resolvedBlueprint();
+        double height = bp != null ? bp.height() : (isPlayer() ? pose.playerHeight() : type.height());
         return height * effectiveScale;
+    }
+
+    /** How wide the NPC's hitbox is at an explicit {@code effectiveScale}. */
+    public double widthForScale(double effectiveScale) {
+        var bp = resolvedBlueprint();
+        double width = bp != null ? bp.width() : Math.max(0.4, type.width());
+        return width * effectiveScale;
     }
 
     /** Puts the name just above the top of the NPC as clients that draw its scale see it. */

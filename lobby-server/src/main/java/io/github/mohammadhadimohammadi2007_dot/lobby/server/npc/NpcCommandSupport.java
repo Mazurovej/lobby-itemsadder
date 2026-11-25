@@ -77,6 +77,12 @@ final class NpcCommandSupport {
                 Messages.text("error", error), Messages.text("allowed", allowed)));
     }
 
+    /** Sends a prefixed MiniMessage reply to a player or console sender. */
+    void reply(CommandSender sender, String miniMessage) {
+        sender.sendMessage(text.renderWithPrefix("<prefix>" + miniMessage,
+                sender instanceof net.minestom.server.entity.Player player ? player : null));
+    }
+
     /**
      * {@code true}/{@code false}, or {@code toggle} (or nothing) to flip the current value, as FancyNpcs
      * does. {@code null} for anything else.

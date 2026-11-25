@@ -169,3 +169,29 @@ badcore-settings:
     dbtest-running: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>"
     dbtest-ok: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>"
     dbtest-fail: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
+
+# ---------------- ModelEngine R4 ----------------
+# Renders ModelEngine R4 .bbmodel blueprints on NPCs (/npc model <npc> <model_id>) using
+# packet-only ItemDisplay bones, with idle animations, head tracking and click hitboxes.
+# Automatically scans the merged ItemsAdder resource pack (itemsadder.pack-zip or
+# <itemsadder.data-path>/output/generated.zip) to map bones to custom_model_data / item_model.
+# Changes in this section apply live with /setup-lobby reload.
+modelengine:
+  enabled: false
+  # Path to a copied ModelEngine folder (containing blueprints/ and optionally resource pack/).
+  data-path: "modelengine"
+  # Optional path to a standalone ModelEngine resource pack (.zip).
+  # Leave empty if ModelEngine is already merged into your ItemsAdder resource pack.
+  pack-zip: ""
+  # Base item used for custom_model_data bone overrides when not detected from the pack.
+  default-item: "leather_horse_armor"
+
+# ---------------- MythicMobs ----------------
+# Loads MythicMobs mob definitions (Mobs/*.yml) so you can spawn them as lobby NPCs
+# with /npc mythic <name> <mob_id> (reads Type, Display, Options.Scale, Equipment and
+# ModelEngine model{mid=...} skills).
+# Changes in this section apply live with /setup-lobby reload.
+mythicmobs:
+  enabled: false
+  # Path to a copied MythicMobs folder (containing Mobs/).
+  data-path: "mythicmobs"

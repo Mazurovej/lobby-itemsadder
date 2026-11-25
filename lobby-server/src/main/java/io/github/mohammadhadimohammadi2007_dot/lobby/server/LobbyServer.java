@@ -166,6 +166,8 @@ public final class LobbyServer implements ServerInfo {
     private SkinsRestorerReader skinsRestorer;
     private BridgeService bridge;
     private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService itemsAdder;
+    private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService modelEngine;
+    private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.mythicmobs.MythicMobsService mythicMobs;
     private @Nullable io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.voicechat.VoiceChatServer voiceChat;
     private io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService badcoreSettings;
     private ChatSystem chat;
@@ -401,6 +403,16 @@ public final class LobbyServer implements ServerInfo {
         integrations.add(itemsAdder.reload(settings.itemsAdder()));
         io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.set(itemsAdder);
         placeholders.textPreprocessor(itemsAdder::replaceGlyphsInTemplate);
+
+        modelEngine = new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService(
+                configManager.dataDir());
+        integrations.add(modelEngine.reload(settings.modelEngine(), settings.itemsAdder()));
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService.Active.set(modelEngine);
+
+        mythicMobs = new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.mythicmobs.MythicMobsService(
+                configManager.dataDir());
+        integrations.add(mythicMobs.reload(settings.mythicMobs()));
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.mythicmobs.MythicMobsService.Active.set(mythicMobs);
 
         if (!settings.voiceChat().enabled()) {
             integrations.add(IntegrationStatus.disabled(
@@ -716,6 +728,14 @@ public final class LobbyServer implements ServerInfo {
         integrations.removeIf(status -> status.name().equals(
                 io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.itemsadder.ItemsAdderService.INTEGRATION_NAME));
         integrations.add(iaStatus);
+        IntegrationStatus megStatus = modelEngine.reload(reloaded.integrations().modelEngine(), reloaded.integrations().itemsAdder());
+        integrations.removeIf(status -> status.name().equals(
+                io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService.INTEGRATION_NAME));
+        integrations.add(megStatus);
+        IntegrationStatus mmStatus = mythicMobs.reload(reloaded.integrations().mythicMobs());
+        integrations.removeIf(status -> status.name().equals(
+                io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.mythicmobs.MythicMobsService.INTEGRATION_NAME));
+        integrations.add(mmStatus);
         IntegrationStatus badcoreStatus = badcoreSettings.reload(reloaded.integrations().badcoreSettings());
         integrations.removeIf(status -> status.name().equals(
                 io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.INTEGRATION_NAME));
@@ -833,6 +853,8 @@ public final class LobbyServer implements ServerInfo {
             LOGGER.info("Database connections closed.");
         }
         io.github.mohammadhadimohammadi2007_dot.lobby.server.item.ItemResolver.Active.reset();
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.modelengine.ModelEngineService.Active.reset();
+        io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.mythicmobs.MythicMobsService.Active.reset();
     }
 
     /** Whether players are muted (LiteBans), for the chat system. */

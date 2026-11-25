@@ -76,6 +76,7 @@ public final class NpcCommand extends Command {
         addSubcommand(equipment(npc));
         new NpcNameCommands(support).addTo(this, npc);
         new NpcLookCommands(support).addTo(this, npc);
+        new NpcModelCommands(support).addTo(this, npc);
         new NpcActionCommands(support).addTo(this, npc);
         addSubcommand(importCommand());
     }
