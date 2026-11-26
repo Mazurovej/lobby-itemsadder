@@ -92,6 +92,8 @@ public final class BadcoreSettingsRepository {
     private final Map<UUID, DuelsState> duelsCache = new ConcurrentHashMap<>();
     private final Map<UUID, Map<String, Boolean>> tabViewCache = new ConcurrentHashMap<>();
     private final Map<UUID, String> chatColorCache = new ConcurrentHashMap<>();
+    private volatile java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset> chatColorCatalog = java.util.List.of();
+    private volatile java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem> tabViewCatalog = java.util.List.of();
     private final Map<UUID, CompletableFuture<Void>> pendingOps = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastClickAt = new ConcurrentHashMap<>();
 
@@ -470,6 +472,142 @@ public final class BadcoreSettingsRepository {
         }
     }
 
+    public java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset> getChatColorCatalog() {
+        return chatColorCatalog;
+    }
+
+    public java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem> getTabViewCatalog() {
+        return tabViewCatalog;
+    }
+
+    public CompletableFuture<Void> loadCatalogsAsync() {
+        if (!db.isConnected()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return CompletableFuture.runAsync(this::loadCatalogsSync, db.executor());
+    }
+
+    private void loadCatalogsSync() {
+        java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset> colors = new java.util.ArrayList<>();
+        String ccSql = "SELECT id, name, material, permission, gradient_start, gradient_end, solid_color FROM badcore_chatcolor_catalog ORDER BY sort_order ASC, id ASC;";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(ccSql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String id = rs.getString("id");
+                if (id == null || id.isBlank()) {
+                    continue;
+                }
+                colors.add(new io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset(
+                        id.toLowerCase(Locale.ROOT),
+                        rs.getString("name"),
+                        rs.getString("material"),
+                        rs.getString("permission") != null ? rs.getString("permission") : "",
+                        rs.getString("gradient_start"),
+                        rs.getString("gradient_end"),
+                        rs.getString("solid_color")
+                ));
+            }
+            this.chatColorCatalog = java.util.List.copyOf(colors);
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to load ChatColor catalog: {}", e.getMessage());
+        }
+
+        java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem> tabs = new java.util.ArrayList<>();
+        String tvSql = "SELECT id, name, material, permission, default_enabled FROM badcore_tabview_catalog ORDER BY sort_order ASC, id ASC;";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(tvSql);
+             ResultSet rs = ps.executeQuery()) {
+            while (rs.next()) {
+                String id = rs.getString("id");
+                if (id == null || id.isBlank()) {
+                    continue;
+                }
+                tabs.add(new io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem(
+                        id.toLowerCase(Locale.ROOT),
+                        rs.getString("name"),
+                        rs.getString("material"),
+                        rs.getString("permission") != null ? rs.getString("permission") : "",
+                        rs.getBoolean("default_enabled")
+                ));
+            }
+            this.tabViewCatalog = java.util.List.copyOf(tabs);
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to load TabView catalog: {}", e.getMessage());
+        }
+    }
+
+    public CompletableFuture<Void> syncCatalogsAsync(
+            java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset> chatColors,
+            java.util.List<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem> tabViews) {
+        if (!db.isConnected()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("MariaDB is not connected."));
+        }
+        var ccCopy = chatColors != null ? java.util.List.copyOf(chatColors) : java.util.List.<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.ChatColorPreset>of();
+        var tvCopy = tabViews != null ? java.util.List.copyOf(tabViews) : java.util.List.<io.github.mohammadhadimohammadi2007_dot.lobby.server.config.IntegrationsConfig.BadcoreSettings.TabViewItem>of();
+        return CompletableFuture.runAsync(() -> {
+            try (Connection conn = db.getConnection()) {
+                conn.setAutoCommit(false);
+                try {
+                    try (java.sql.Statement st = conn.createStatement()) {
+                        st.executeUpdate("DELETE FROM badcore_chatcolor_catalog;");
+                        st.executeUpdate("DELETE FROM badcore_tabview_catalog;");
+                    }
+                    if (!ccCopy.isEmpty()) {
+                        String insCc = """
+                                INSERT INTO badcore_chatcolor_catalog
+                                    (id, name, material, permission, gradient_start, gradient_end, solid_color, sort_order)
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                                """;
+                        try (PreparedStatement ps = conn.prepareStatement(insCc)) {
+                            int order = 0;
+                            for (var c : ccCopy) {
+                                ps.setString(1, c.id().toLowerCase(Locale.ROOT));
+                                ps.setString(2, c.name() != null ? c.name() : c.id());
+                                ps.setString(3, c.material() != null ? c.material() : "NAME_TAG");
+                                ps.setString(4, c.permission() != null ? c.permission() : "");
+                                ps.setString(5, c.gradientStart());
+                                ps.setString(6, c.gradientEnd());
+                                ps.setString(7, c.solidColor());
+                                ps.setInt(8, order++);
+                                ps.addBatch();
+                            }
+                            ps.executeBatch();
+                        }
+                    }
+                    if (!tvCopy.isEmpty()) {
+                        String insTv = """
+                                INSERT INTO badcore_tabview_catalog
+                                    (id, name, material, permission, default_enabled, sort_order)
+                                VALUES (?, ?, ?, ?, ?, ?);
+                                """;
+                        try (PreparedStatement ps = conn.prepareStatement(insTv)) {
+                            int order = 0;
+                            for (var t : tvCopy) {
+                                ps.setString(1, t.id().toLowerCase(Locale.ROOT));
+                                ps.setString(2, t.name() != null ? t.name() : t.id());
+                                ps.setString(3, t.material() != null ? t.material() : "NAME_TAG");
+                                ps.setString(4, t.permission() != null ? t.permission() : "");
+                                ps.setBoolean(5, t.defaultEnabled());
+                                ps.setInt(6, order++);
+                                ps.addBatch();
+                            }
+                            ps.executeBatch();
+                        }
+                    }
+                    conn.commit();
+                    this.chatColorCatalog = ccCopy;
+                    this.tabViewCatalog = tvCopy;
+                } catch (SQLException e) {
+                    conn.rollback();
+                    throw e;
+                }
+            } catch (SQLException e) {
+                throw new RuntimeException(e);
+            }
+        }, db.executor());
+    }
+
     public void shutdown() {
         for (CompletableFuture<Void> op : pendingOps.values()) {
             try {
@@ -485,6 +623,8 @@ public final class BadcoreSettingsRepository {
         duelsCache.clear();
         tabViewCache.clear();
         chatColorCache.clear();
+        chatColorCatalog = java.util.List.of();
+        tabViewCatalog = java.util.List.of();
         lastClickAt.clear();
     }
 

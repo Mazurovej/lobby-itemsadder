@@ -157,15 +157,19 @@ public record IntegrationsConfig(
             java.util.List<TabViewItem> tabViewItems,
             java.util.List<ChatColorPreset> chatColors
     ) {
-        public static final Map<String, String> DEFAULT_MESSAGES = Map.of(
-                "player-only", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This command can only be used by players.</#CF8484>",
-                "no-permission", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>You do not have permission to use this command.</#CF8484>",
-                "vip-required", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This setting requires a VIP rank.</#CF8484>",
-                "cooldown", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Please wait <white><seconds>s</white> before changing this again.</#CF8484>",
-                "reloaded", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Settings configuration reloaded.</#8ECF84>",
-                "dbtest-running", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>",
-                "dbtest-ok", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>",
-                "dbtest-fail", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
+        public static final Map<String, String> DEFAULT_MESSAGES = Map.ofEntries(
+                Map.entry("player-only", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This command can only be used by players.</#CF8484>"),
+                Map.entry("no-permission", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>You do not have permission to use this command.</#CF8484>"),
+                Map.entry("vip-required", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This setting requires a VIP rank.</#CF8484>"),
+                Map.entry("cooldown", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Please wait <white><seconds>s</white> before changing this again.</#CF8484>"),
+                Map.entry("reloaded", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Settings configuration reloaded.</#8ECF84>"),
+                Map.entry("dbtest-running", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>"),
+                Map.entry("dbtest-ok", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>"),
+                Map.entry("dbtest-fail", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"),
+                Map.entry("sync-running", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Syncing ChatColors & TabView...</#DDDDDD>"),
+                Map.entry("sync-pushed", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Synced <white><chatcolors></white> chat colors and <white><tabview></white> tab view entries to MariaDB.</#8ECF84>"),
+                Map.entry("sync-pulled", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Loaded <white><chatcolors></white> chat colors and <white><tabview></white> tab view entries from MariaDB.</#8ECF84>"),
+                Map.entry("sync-fail", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Sync failed: <white><error></white></#CF8484>")
         );
 
         public static final java.util.List<TabViewItem> DEFAULT_TAB_VIEW_ITEMS = java.util.List.of(
@@ -176,11 +180,11 @@ public record IntegrationsConfig(
         );
 
         public static final java.util.List<ChatColorPreset> DEFAULT_CHAT_COLORS = java.util.List.of(
-                new ChatColorPreset("fire", "Fire", "CREEPER_BANNER_PATTERN", "badcore.chatcolor.fire"),
-                new ChatColorPreset("ice", "Ice", "GUSTER_BANNER_PATTERN", "badcore.chatcolor.ice"),
-                new ChatColorPreset("toxic", "Toxic", "FLOW_BANNER_PATTERN", "badcore.chatcolor.toxic"),
-                new ChatColorPreset("amethyst", "Amethyst", "FLOWER_BANNER_PATTERN", "badcore.chatcolor.amethyst"),
-                new ChatColorPreset("gold", "Gold", "MOJANG_BANNER_PATTERN", "badcore.chatcolor.gold")
+                new ChatColorPreset("fire", "Fire", "CREEPER_BANNER_PATTERN", "badcore.chatcolor.fire", null, null, null),
+                new ChatColorPreset("ice", "Ice", "GUSTER_BANNER_PATTERN", "badcore.chatcolor.ice", null, null, null),
+                new ChatColorPreset("toxic", "Toxic", "FLOW_BANNER_PATTERN", "badcore.chatcolor.toxic", null, null, null),
+                new ChatColorPreset("amethyst", "Amethyst", "FLOWER_BANNER_PATTERN", "badcore.chatcolor.amethyst", null, null, null),
+                new ChatColorPreset("gold", "Gold", "MOJANG_BANNER_PATTERN", "badcore.chatcolor.gold", null, null, null)
         );
 
         public static final BadcoreSettings DISABLED = new BadcoreSettings(
@@ -210,7 +214,10 @@ public record IntegrationsConfig(
                 String id,
                 String name,
                 String material,
-                String permission
+                String permission,
+                String gradientStart,
+                String gradientEnd,
+                String solidColor
         ) {
         }
 
@@ -365,13 +372,28 @@ public record IntegrationsConfig(
         for (String key : reader.optionalKeys("badcore-settings.chatcolors")) {
             String base = "badcore-settings.chatcolors." + key;
             String id = key.trim().toLowerCase(java.util.Locale.ROOT);
-            if (id.isEmpty()) {
+            if (id.isEmpty() || id.equals("default") || id.equals("gui_title")) {
                 continue;
             }
             String name = reader.string(base + ".name", key);
-            String material = reader.string(base + ".material", "CREEPER_BANNER_PATTERN").trim();
+            String patternFallback = reader.string(base + ".pattern", "CREEPER_BANNER_PATTERN").trim();
+            String material = reader.string(base + ".material", patternFallback).trim();
             String permission = reader.string(base + ".permission", "badcore.chatcolor." + id).trim();
-            chatColors.add(new BadcoreSettings.ChatColorPreset(id, name, material, permission));
+            String gradStart = null;
+            String gradEnd = null;
+            String gradient = reader.string(base + ".gradient", "").trim();
+            if (!gradient.isEmpty()) {
+                String[] parts = gradient.split("[-–>]");
+                if (parts.length >= 2) {
+                    gradStart = parts[0].trim();
+                    gradEnd = parts[parts.length - 1].trim();
+                }
+            }
+            String solid = reader.string(base + ".color", reader.string(base + ".hex", "")).trim();
+            if (solid.isEmpty()) {
+                solid = null;
+            }
+            chatColors.add(new BadcoreSettings.ChatColorPreset(id, name, material, permission, gradStart, gradEnd, solid));
         }
 
         return new BadcoreSettings(

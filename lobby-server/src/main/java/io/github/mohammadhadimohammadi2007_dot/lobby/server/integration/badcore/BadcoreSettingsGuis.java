@@ -171,7 +171,7 @@ public final class BadcoreSettingsGuis {
     }
 
     public void openTabView(Player player, boolean openedFromSettings, int requestedPage) {
-        List<BadcoreSettings.TabViewItem> entries = settingsSupplier.get().tabViewItems();
+        List<BadcoreSettings.TabViewItem> entries = effectiveTabViewItems();
         boolean large = entries.size() > SLOTS_SMALL.length;
         InventoryType type = large ? InventoryType.CHEST_4_ROW : InventoryType.CHEST_3_ROW;
         int navRowStart = (large ? 36 : 27) - 9;
@@ -189,7 +189,7 @@ public final class BadcoreSettingsGuis {
     }
 
     public void openChatColor(Player player, boolean openedFromSettings, int requestedPage) {
-        List<BadcoreSettings.ChatColorPreset> presets = settingsSupplier.get().chatColors();
+        List<BadcoreSettings.ChatColorPreset> presets = effectiveChatColors();
         boolean large = presets.size() > SLOTS_SMALL.length;
         InventoryType type = large ? InventoryType.CHEST_4_ROW : InventoryType.CHEST_3_ROW;
         int navRowStart = (large ? 36 : 27) - 9;
@@ -206,6 +206,16 @@ public final class BadcoreSettingsGuis {
         player.openInventory(inventory);
     }
 
+    private List<BadcoreSettings.TabViewItem> effectiveTabViewItems() {
+        List<BadcoreSettings.TabViewItem> dbList = repository.getTabViewCatalog();
+        return !dbList.isEmpty() ? dbList : settingsSupplier.get().tabViewItems();
+    }
+
+    private List<BadcoreSettings.ChatColorPreset> effectiveChatColors() {
+        List<BadcoreSettings.ChatColorPreset> dbList = repository.getChatColorCatalog();
+        return !dbList.isEmpty() ? dbList : settingsSupplier.get().chatColors();
+    }
+
     /** Re-renders the player's currently open settings GUI in place if it matches {@code kind}. */
     public void rerenderIfOpen(Player player, Kind kind) {
         OpenGui current = open.get(player.getUuid());
@@ -217,8 +227,8 @@ public final class BadcoreSettingsGuis {
             case QOA -> renderQoa(player, current.inventory());
             case DUELS -> renderDuels(player, current.inventory());
             case GENS -> renderGens(current.inventory());
-            case TABVIEW -> renderTabView(player, current, settingsSupplier.get().tabViewItems());
-            case CHATCOLOR -> renderChatColor(player, current, settingsSupplier.get().chatColors());
+            case TABVIEW -> renderTabView(player, current, effectiveTabViewItems());
+            case CHATCOLOR -> renderChatColor(player, current, effectiveChatColors());
         }
     }
 
@@ -467,6 +477,8 @@ public final class BadcoreSettingsGuis {
             gui.slotMap().put(slot, entry);
 
             Material mat = BadcoreSettingsGuiStyle.resolveMaterial(entry.material(), Material.NAME_TAG);
+            String rawName = entry.name() != null && !entry.name().isBlank() ? entry.name() : entry.id();
+            String formattedName = BadcoreSettingsGuiStyle.name(FormattedText.legacyToMiniMessage(rawName));
             boolean unlocked = entry.permission().isBlank() || permissions.hasPermission(viewer, entry.permission());
             boolean enabled = unlocked && repository.isTabViewEnabled(viewer.getUuid(), entry.id(), entry.defaultEnabled());
 
@@ -474,7 +486,7 @@ public final class BadcoreSettingsGuis {
             if (!unlocked) {
                 stack = BadcoreSettingsGuiStyle.item(
                         mat,
-                        BadcoreSettingsGuiStyle.name(entry.name()),
+                        formattedName,
                         BadcoreSettingsGuiStyle.subtitle("tab view"),
                         "",
                         "<#CF8484>✖ Locked</#CF8484>"
@@ -483,7 +495,7 @@ public final class BadcoreSettingsGuis {
                 stack = BadcoreSettingsGuiStyle.item(
                         mat,
                         enabled,
-                        BadcoreSettingsGuiStyle.name(entry.name()),
+                        formattedName,
                         BadcoreSettingsGuiStyle.subtitle("tab view"),
                         "",
                         BadcoreSettingsGuiStyle.statusLine("Status", enabled),
@@ -544,7 +556,8 @@ public final class BadcoreSettingsGuis {
             int slot = itemSlots[i - start];
             gui.slotMap().put(slot, preset);
 
-            Material mat = BadcoreSettingsGuiStyle.resolveMaterial(preset.material(), Material.NAME_TAG);
+            Material mat = resolveChatColorMaterial(preset.material());
+            String displayName = formatChatColorDisplayName(preset);
             boolean unlocked = preset.permission().isBlank() || permissions.hasPermission(viewer, preset.permission());
             boolean selected = preset.id().equalsIgnoreCase(activeId);
 
@@ -552,7 +565,7 @@ public final class BadcoreSettingsGuis {
             if (!unlocked) {
                 stack = BadcoreSettingsGuiStyle.item(
                         mat,
-                        BadcoreSettingsGuiStyle.name(preset.name()),
+                        displayName,
                         BadcoreSettingsGuiStyle.subtitle("chatcolor"),
                         "",
                         "<#CF8484>✖ Locked</#CF8484>"
@@ -561,7 +574,7 @@ public final class BadcoreSettingsGuis {
                 stack = BadcoreSettingsGuiStyle.item(
                         mat,
                         selected,
-                        BadcoreSettingsGuiStyle.name(preset.name()),
+                        displayName,
                         BadcoreSettingsGuiStyle.subtitle("chatcolor"),
                         "",
                         BadcoreSettingsGuiStyle.statusLine("Selected", selected),
@@ -606,6 +619,36 @@ public final class BadcoreSettingsGuis {
         }
 
         BadcoreSettingsGuiStyle.fillEmpty(inventory);
+    }
+
+    static Material resolveChatColorMaterial(@Nullable String matName) {
+        if (matName == null || matName.isBlank()) {
+            return Material.FLOWER_BANNER_PATTERN;
+        }
+        String norm = matName.trim().toLowerCase(Locale.ROOT);
+        Material mat = Material.fromKey(norm.contains(":") ? norm : "minecraft:" + norm);
+        if ((mat == null || mat == Material.AIR) && !norm.endsWith("_banner_pattern")) {
+            mat = Material.fromKey(norm.contains(":") ? norm + "_banner_pattern" : "minecraft:" + norm + "_banner_pattern");
+        }
+        return (mat == null || mat == Material.AIR) ? Material.NAME_TAG : mat;
+    }
+
+    static String formatChatColorDisplayName(BadcoreSettings.ChatColorPreset def) {
+        String rawName = def.name() != null && !def.name().isBlank() ? def.name() : def.id();
+        if (def.gradientStart() != null && !def.gradientStart().isBlank()
+                && def.gradientEnd() != null && !def.gradientEnd().isBlank()) {
+            String s = def.gradientStart().startsWith("#") ? def.gradientStart() : "#" + def.gradientStart();
+            String e = def.gradientEnd().startsWith("#") ? def.gradientEnd() : "#" + def.gradientEnd();
+            return "<gradient:" + s + ":" + e + ">" + rawName + "</gradient>";
+        }
+        if (def.solidColor() != null && !def.solidColor().isBlank()) {
+            String solid = def.solidColor().trim();
+            if (solid.startsWith("#") && solid.length() == 7) {
+                return "<" + solid + ">" + rawName + "</" + solid + ">";
+            }
+            return FormattedText.legacyToMiniMessage(solid + rawName);
+        }
+        return BadcoreSettingsGuiStyle.name(FormattedText.legacyToMiniMessage(rawName));
     }
 
     private void onClick(InventoryPreClickEvent event) {
@@ -809,7 +852,7 @@ public final class BadcoreSettingsGuis {
             return;
         }
         if (slot == navRowStart + 4) {
-            List<BadcoreSettings.TabViewItem> entries = settingsSupplier.get().tabViewItems();
+            List<BadcoreSettings.TabViewItem> entries = effectiveTabViewItems();
             List<String> ids = new ArrayList<>(entries.size());
             for (BadcoreSettings.TabViewItem item : entries) {
                 ids.add(item.id());
@@ -835,7 +878,7 @@ public final class BadcoreSettingsGuis {
 
         boolean next = repository.toggleTabView(clicker.getUuid(), entry.id(), entry.defaultEnabled());
         playOrb(clicker, 0.8f, next ? 1.3f : 0.8f);
-        renderTabView(clicker, current, settingsSupplier.get().tabViewItems());
+        renderTabView(clicker, current, effectiveTabViewItems());
     }
 
     private void handleChatColorClick(Player clicker, OpenGui current, int slot) {
@@ -862,7 +905,7 @@ public final class BadcoreSettingsGuis {
         if (slot == navRowStart + 4) {
             repository.setChatColorId(clicker.getUuid(), "default");
             playClick(clicker, 0.8f, 0.9f);
-            renderChatColor(clicker, current, settingsSupplier.get().chatColors());
+            renderChatColor(clicker, current, effectiveChatColors());
             return;
         }
 
@@ -881,7 +924,7 @@ public final class BadcoreSettingsGuis {
 
         repository.setChatColorId(clicker.getUuid(), preset.id());
         playOrb(clicker, 0.8f, 1.2f);
-        renderChatColor(clicker, current, settingsSupplier.get().chatColors());
+        renderChatColor(clicker, current, effectiveChatColors());
     }
 
     private boolean checkCooldownOrNotify(Player clicker) {

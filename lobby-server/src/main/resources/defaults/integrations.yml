@@ -171,6 +171,10 @@ badcore-settings:
     dbtest-running: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>"
     dbtest-ok: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>"
     dbtest-fail: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
+    sync-running: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Syncing ChatColors & TabView...</#DDDDDD>"
+    sync-pushed: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Synced <white><chatcolors></white> chat colors and <white><tabview></white> tab view entries to MariaDB.</#8ECF84>"
+    sync-pulled: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>Loaded <white><chatcolors></white> chat colors and <white><tabview></white> tab view entries from MariaDB.</#8ECF84>"
+    sync-fail: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Sync failed: <white><error></white></#CF8484>"
     vip:
       label: "VIP"
       badge: " &7%vip%"

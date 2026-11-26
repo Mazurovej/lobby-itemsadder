@@ -155,6 +155,32 @@ public final class BadcoreSettingsDatabase implements AutoCloseable {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """;
 
+        String createChatColorCatalog = """
+                CREATE TABLE IF NOT EXISTS badcore_chatcolor_catalog (
+                    id VARCHAR(64) NOT NULL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL,
+                    material VARCHAR(64) NOT NULL,
+                    permission VARCHAR(128) NOT NULL DEFAULT '',
+                    gradient_start VARCHAR(16) NULL,
+                    gradient_end VARCHAR(16) NULL,
+                    solid_color VARCHAR(32) NULL,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+
+        String createTabViewCatalog = """
+                CREATE TABLE IF NOT EXISTS badcore_tabview_catalog (
+                    id VARCHAR(64) NOT NULL PRIMARY KEY,
+                    name VARCHAR(128) NOT NULL,
+                    material VARCHAR(64) NOT NULL,
+                    permission VARCHAR(128) NOT NULL DEFAULT '',
+                    default_enabled TINYINT(1) NOT NULL DEFAULT 0,
+                    sort_order INT NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+
         try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
             stmt.execute(createQoa);
             stmt.execute(createProfiles);
@@ -165,6 +191,8 @@ public final class BadcoreSettingsDatabase implements AutoCloseable {
             stmt.execute("ALTER TABLE practice_settings ADD COLUMN IF NOT EXISTS silent_spectate TINYINT(1) NOT NULL DEFAULT 1;");
             stmt.execute(createTabView);
             stmt.execute(createChatColor);
+            stmt.execute(createChatColorCatalog);
+            stmt.execute(createTabViewCatalog);
         }
     }
 

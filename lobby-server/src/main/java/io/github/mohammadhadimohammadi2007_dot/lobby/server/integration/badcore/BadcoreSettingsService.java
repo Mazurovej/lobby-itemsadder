@@ -64,6 +64,9 @@ public final class BadcoreSettingsService {
         }
 
         String dbError = database.init(this.config.database());
+        if (database.isConnected()) {
+            repository.loadCatalogsAsync();
+        }
         syncOnlinePlayers();
 
         if (!this.config.database().enabled()) {
@@ -73,6 +76,55 @@ public final class BadcoreSettingsService {
             return IntegrationStatus.failed(INTEGRATION_NAME, "MariaDB failed (" + dbError + "), running bridge-only");
         }
         return IntegrationStatus.active(INTEGRATION_NAME, "MariaDB + badcore:settings bridge");
+    }
+
+    public record SyncResult(boolean success, String mode, int chatColorCount, int tabViewCount, String error) {
+    }
+
+    /** Returns MariaDB-synced chat colors if present, otherwise falls back to local integrations.yml config. */
+    public List<BadcoreSettings.ChatColorPreset> effectiveChatColors() {
+        List<BadcoreSettings.ChatColorPreset> dbList = repository.getChatColorCatalog();
+        return !dbList.isEmpty() ? dbList : config.chatColors();
+    }
+
+    /** Returns MariaDB-synced tabview entries if present, otherwise falls back to local integrations.yml config. */
+    public List<BadcoreSettings.TabViewItem> effectiveTabViewItems() {
+        List<BadcoreSettings.TabViewItem> dbList = repository.getTabViewCatalog();
+        return !dbList.isEmpty() ? dbList : config.tabViewItems();
+    }
+
+    /**
+     * Pulls ChatColor & TabView catalogs from MariaDB ({@code pullOnly = true}) or pushes local config
+     * definitions into MariaDB ({@code pullOnly = false}).
+     */
+    public java.util.concurrent.CompletableFuture<SyncResult> syncCatalogsAsync(boolean pullOnly) {
+        if (!database.isConnected()) {
+            return java.util.concurrent.CompletableFuture.completedFuture(
+                    new SyncResult(false, "error", 0, 0, "MariaDB is not connected."));
+        }
+        if (pullOnly) {
+            return repository.loadCatalogsAsync().handle((unused, err) -> {
+                if (err != null) {
+                    Throwable cause = err.getCause() != null ? err.getCause() : err;
+                    return new SyncResult(false, "pull", 0, 0,
+                            cause.getMessage() != null ? cause.getMessage() : cause.toString());
+                }
+                return new SyncResult(true, "pull",
+                        repository.getChatColorCatalog().size(),
+                        repository.getTabViewCatalog().size(),
+                        null);
+            });
+        }
+        List<BadcoreSettings.ChatColorPreset> chatColors = config.chatColors();
+        List<BadcoreSettings.TabViewItem> tabViews = config.tabViewItems();
+        return repository.syncCatalogsAsync(chatColors, tabViews).handle((unused, err) -> {
+            if (err != null) {
+                Throwable cause = err.getCause() != null ? err.getCause() : err;
+                return new SyncResult(false, "push", 0, 0,
+                        cause.getMessage() != null ? cause.getMessage() : cause.toString());
+            }
+            return new SyncResult(true, "push", chatColors.size(), tabViews.size(), null);
+        });
     }
 
     public void register(EventNode<PlayerEvent> node) {

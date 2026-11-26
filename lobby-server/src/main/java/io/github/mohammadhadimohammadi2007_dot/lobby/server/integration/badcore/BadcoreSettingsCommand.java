@@ -59,6 +59,15 @@ public final class BadcoreSettingsCommand extends Command {
         reloadSub.setDefaultExecutor((sender, context) -> runReload(sender));
         addSubcommand(reloadSub);
 
+        Command syncSub = new Command("sync");
+        syncSub.setCondition(adminCondition());
+        syncSub.setDefaultExecutor((sender, context) -> runSync(sender, false));
+        Command syncPullSub = new Command("pull");
+        syncPullSub.setCondition(adminCondition());
+        syncPullSub.setDefaultExecutor((sender, context) -> runSync(sender, true));
+        syncSub.addSubcommand(syncPullSub);
+        addSubcommand(syncSub);
+
         Command dbtestSub = new Command("dbtest");
         dbtestSub.setCondition(adminCondition());
         dbtestSub.setDefaultExecutor((sender, context) -> runDbTest(sender));
@@ -156,6 +165,32 @@ public final class BadcoreSettingsCommand extends Command {
                         "error", cause.getMessage() != null ? cause.getMessage() : cause.toString());
             } else {
                 service.sendMessage(sender, "reloaded");
+            }
+        }));
+    }
+
+    private void runSync(CommandSender sender, boolean pullOnly) {
+        if (!service.isEnabled()) {
+            service.sendMessage(sender, "sync-fail",
+                    "error", "badcore-settings is disabled in integrations.yml");
+            return;
+        }
+        service.sendMessage(sender, "sync-running");
+        service.syncCatalogsAsync(pullOnly).whenComplete((res, err) -> Async.onTickThread(() -> {
+            if (err != null) {
+                service.sendMessage(sender, "sync-fail",
+                        "error", err.getMessage() != null ? err.getMessage() : err.toString());
+            } else if (!res.success()) {
+                service.sendMessage(sender, "sync-fail",
+                        "error", res.error() != null ? res.error() : "Unknown error");
+            } else if ("push".equals(res.mode())) {
+                service.sendMessage(sender, "sync-pushed",
+                        "chatcolors", Integer.toString(res.chatColorCount()),
+                        "tabview", Integer.toString(res.tabViewCount()));
+            } else {
+                service.sendMessage(sender, "sync-pulled",
+                        "chatcolors", Integer.toString(res.chatColorCount()),
+                        "tabview", Integer.toString(res.tabViewCount()));
             }
         }));
     }

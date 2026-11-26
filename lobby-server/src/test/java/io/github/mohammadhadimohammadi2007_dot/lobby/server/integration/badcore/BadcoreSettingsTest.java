@@ -76,6 +76,21 @@ class BadcoreSettingsTest {
     }
 
     @Test
+    void chatColorFormattingAndMaterialFallback(Env env) {
+        assertEquals(Material.CREEPER_BANNER_PATTERN, BadcoreSettingsGuis.resolveChatColorMaterial("CREEPER"));
+        assertEquals(Material.FLOWER_BANNER_PATTERN, BadcoreSettingsGuis.resolveChatColorMaterial(""));
+        assertEquals(Material.NAME_TAG, BadcoreSettingsGuis.resolveChatColorMaterial("NOT_A_REAL_ITEM"));
+
+        var grad = new IntegrationsConfig.BadcoreSettings.ChatColorPreset(
+                "fire", "Fire", "CREEPER", "p", "FF4400", "#FFCC00", null);
+        assertEquals("<gradient:#FF4400:#FFCC00>Fire</gradient>", BadcoreSettingsGuis.formatChatColorDisplayName(grad));
+
+        var solidHex = new IntegrationsConfig.BadcoreSettings.ChatColorPreset(
+                "ice", "Ice", "GUSTER", "p", null, null, "#55CCFF");
+        assertEquals("<#55CCFF>Ice</#55CCFF>", BadcoreSettingsGuis.formatChatColorDisplayName(solidHex));
+    }
+
+    @Test
     void configReadsDefaultsAndCustomValues() throws Exception {
         ConfigManager defaults = new ConfigManager(dir.resolve("defaults"));
         defaults.load();
