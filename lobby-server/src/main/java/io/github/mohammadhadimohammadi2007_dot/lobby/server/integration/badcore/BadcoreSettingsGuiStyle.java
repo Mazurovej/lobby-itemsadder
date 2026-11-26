@@ -107,13 +107,32 @@ public final class BadcoreSettingsGuiStyle {
     }
 
     public static ItemStack item(Material material, String displayName, String... loreLines) {
+        return item(material, false, displayName, loreLines);
+    }
+
+    public static ItemStack item(Material material, boolean glowing, String displayName, String... loreLines) {
         ItemStack.Builder builder = ItemStack.builder(material)
                 .customName(line(displayName))
                 .set(DataComponents.TOOLTIP_DISPLAY, HIDE_ITEM_FLAGS);
+        if (glowing) {
+            builder.glowing();
+        }
         if (loreLines != null && loreLines.length > 0) {
             builder.lore(lore(loreLines));
         }
         return builder.build();
+    }
+
+    public static Material resolveMaterial(String raw, Material fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        String key = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        Material mat = Material.fromKey(key.contains(":") ? key : "minecraft:" + key);
+        if (mat == null || mat == Material.AIR) {
+            return fallback;
+        }
+        return mat;
     }
 
     public static ItemStack fillerPane() {

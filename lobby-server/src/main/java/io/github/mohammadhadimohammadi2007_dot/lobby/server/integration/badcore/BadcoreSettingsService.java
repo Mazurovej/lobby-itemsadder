@@ -32,7 +32,10 @@ public final class BadcoreSettingsService {
     /** Built-in menu names usable via {@code open_menu: ...} in menus.yml / hotbar.yml. */
     public static final String MENU_HUB = "badcore_settings";
     public static final String MENU_GLOBAL = "badcore_settings_global";
+    public static final String MENU_GENS = "badcore_settings_gens";
     public static final String MENU_DUELS = "badcore_settings_duels";
+    public static final String MENU_TABVIEW = "badcore_settings_tabview";
+    public static final String MENU_CHATCOLOR = "badcore_settings_chatcolor";
 
     private static final MiniMessage MM = MiniMessage.miniMessage();
     private static final String DISABLED_MESSAGE =
@@ -49,7 +52,7 @@ public final class BadcoreSettingsService {
         this.bridge = new BadcoreSettingsBridge(this::onProxyQoaState, this::onProxyDuelsState);
         this.repository = new BadcoreSettingsRepository(database, bridge);
         this.guis = new BadcoreSettingsGuis(repository, bridge, permissions,
-                () -> this.config.cooldownMs(), this::sendMessage);
+                () -> this.config, this::sendMessage);
     }
 
     /** Applies (or reloads) the {@code badcore-settings:} config from {@code integrations.yml}. */
@@ -123,7 +126,7 @@ public final class BadcoreSettingsService {
         return guis;
     }
 
-    /** Opens the hub, global/qoa, or duels/practice settings GUI for {@code player}. */
+    /** Opens the hub, global/qoa, gens, duels/practice, tabview, or chatcolor settings GUI for {@code player}. */
     public void openMenu(Player player, String section) {
         if (!config.enabled()) {
             player.sendMessage(MM.deserialize(DISABLED_MESSAGE));
@@ -138,7 +141,10 @@ public final class BadcoreSettingsService {
             }
             switch (normalized) {
                 case "global", "qoa" -> guis.openQoa(player);
+                case "gens" -> guis.openGens(player);
                 case "duels", "practice" -> guis.openDuels(player);
+                case "tabview" -> guis.openTabView(player, false, 0);
+                case "chatcolor" -> guis.openChatColor(player, false, 0);
                 default -> guis.openHub(player);
             }
         }));

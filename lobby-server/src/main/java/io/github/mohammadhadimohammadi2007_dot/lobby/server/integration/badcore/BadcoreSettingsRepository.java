@@ -90,6 +90,8 @@ public final class BadcoreSettingsRepository {
 
     private final Map<UUID, QoaState> qoaCache = new ConcurrentHashMap<>();
     private final Map<UUID, DuelsState> duelsCache = new ConcurrentHashMap<>();
+    private final Map<UUID, Map<String, Boolean>> tabViewCache = new ConcurrentHashMap<>();
+    private final Map<UUID, String> chatColorCache = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<Void>> pendingOps = new ConcurrentHashMap<>();
     private final Map<UUID, Long> lastClickAt = new ConcurrentHashMap<>();
 
@@ -127,6 +129,64 @@ public final class BadcoreSettingsRepository {
         return duelsCache.getOrDefault(uuid, DuelsState.DEFAULT);
     }
 
+    public boolean isTabViewEnabled(UUID uuid, String entryId, boolean defaultEnabled) {
+        if (uuid == null || entryId == null || entryId.isBlank()) {
+            return defaultEnabled;
+        }
+        Map<String, Boolean> map = tabViewCache.get(uuid);
+        if (map == null) {
+            return defaultEnabled;
+        }
+        Boolean val = map.get(entryId.toLowerCase(Locale.ROOT));
+        return val != null ? val : defaultEnabled;
+    }
+
+    public boolean toggleTabView(UUID uuid, String entryId, boolean defaultEnabled) {
+        String key = entryId.toLowerCase(Locale.ROOT);
+        Map<String, Boolean> map = tabViewCache.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>());
+        boolean cur = map.getOrDefault(key, defaultEnabled);
+        boolean next = !cur;
+        map.put(key, next);
+        if (db.isConnected()) {
+            enqueue(uuid, () -> saveTabViewEntrySync(uuid, key, next));
+        }
+        return next;
+    }
+
+    public void disableAllTabView(UUID uuid, Iterable<String> entryIds) {
+        Map<String, Boolean> map = tabViewCache.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>());
+        java.util.List<String> keys = new java.util.ArrayList<>();
+        for (String id : entryIds) {
+            if (id != null && !id.isBlank()) {
+                String k = id.toLowerCase(Locale.ROOT);
+                map.put(k, false);
+                keys.add(k);
+            }
+        }
+        if (db.isConnected() && !keys.isEmpty()) {
+            enqueue(uuid, () -> {
+                for (String k : keys) {
+                    saveTabViewEntrySync(uuid, k, false);
+                }
+            });
+        }
+    }
+
+    public String getChatColorId(UUID uuid) {
+        if (uuid == null) {
+            return "default";
+        }
+        return chatColorCache.getOrDefault(uuid, "default");
+    }
+
+    public void setChatColorId(UUID uuid, String colorId) {
+        String normalized = (colorId == null || colorId.isBlank()) ? "default" : colorId.toLowerCase(Locale.ROOT);
+        chatColorCache.put(uuid, normalized);
+        if (db.isConnected()) {
+            enqueue(uuid, () -> saveChatColorSync(uuid, normalized));
+        }
+    }
+
     public void updateQoaCacheFromProxy(UUID uuid, QoaState state) {
         qoaCache.put(uuid, state);
     }
@@ -142,6 +202,8 @@ public final class BadcoreSettingsRepository {
         return enqueue(uuid, () -> {
             loadQoaSync(uuid);
             loadDuelsSync(uuid);
+            loadTabViewSync(uuid);
+            loadChatColorSync(uuid);
         });
     }
 
@@ -318,6 +380,78 @@ public final class BadcoreSettingsRepository {
         }
     }
 
+    private void loadTabViewSync(UUID uuid) {
+        String sql = "SELECT entry_id, enabled FROM badcore_tabview_settings WHERE uuid = ?;";
+        Map<String, Boolean> map = tabViewCache.computeIfAbsent(uuid, k -> new ConcurrentHashMap<>());
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String id = rs.getString("entry_id");
+                    if (id != null && !id.isBlank()) {
+                        map.put(id.toLowerCase(Locale.ROOT), rs.getBoolean("enabled"));
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to load TabView settings for {}: {}", uuid, e.getMessage());
+        }
+    }
+
+    private void loadChatColorSync(UUID uuid) {
+        String sql = "SELECT color_id FROM badcore_chatcolor_settings WHERE uuid = ?;";
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    String id = rs.getString("color_id");
+                    chatColorCache.put(uuid, (id == null || id.isBlank()) ? "default" : id.toLowerCase(Locale.ROOT));
+                } else {
+                    chatColorCache.putIfAbsent(uuid, "default");
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to load ChatColor settings for {}: {}", uuid, e.getMessage());
+        }
+    }
+
+    private void saveTabViewEntrySync(UUID uuid, String entryId, boolean enabled) {
+        String sql = """
+                INSERT INTO badcore_tabview_settings (uuid, entry_id, enabled)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE
+                    enabled = VALUES(enabled);
+                """;
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, entryId);
+            ps.setBoolean(3, enabled);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to save TabView setting '{}' for {}: {}", entryId, uuid, e.getMessage());
+        }
+    }
+
+    private void saveChatColorSync(UUID uuid, String colorId) {
+        String sql = """
+                INSERT INTO badcore_chatcolor_settings (uuid, color_id)
+                VALUES (?, ?)
+                ON DUPLICATE KEY UPDATE
+                    color_id = VALUES(color_id);
+                """;
+        try (Connection conn = db.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, uuid.toString());
+            ps.setString(2, colorId);
+            ps.executeUpdate();
+        } catch (SQLException e) {
+            LOGGER.warn("Failed to save ChatColor setting '{}' for {}: {}", colorId, uuid, e.getMessage());
+        }
+    }
+
     public void cleanupDisconnect(UUID uuid) {
         lastClickAt.remove(uuid);
         CompletableFuture<Void> pending = pendingOps.get(uuid);
@@ -325,10 +459,14 @@ public final class BadcoreSettingsRepository {
             pending.whenComplete((u, ex) -> {
                 qoaCache.remove(uuid);
                 duelsCache.remove(uuid);
+                tabViewCache.remove(uuid);
+                chatColorCache.remove(uuid);
             });
         } else {
             qoaCache.remove(uuid);
             duelsCache.remove(uuid);
+            tabViewCache.remove(uuid);
+            chatColorCache.remove(uuid);
         }
     }
 
@@ -345,6 +483,8 @@ public final class BadcoreSettingsRepository {
         pendingOps.clear();
         qoaCache.clear();
         duelsCache.clear();
+        tabViewCache.clear();
+        chatColorCache.clear();
         lastClickAt.clear();
     }
 

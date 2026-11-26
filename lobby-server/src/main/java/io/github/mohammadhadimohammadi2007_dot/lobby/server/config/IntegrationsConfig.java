@@ -149,8 +149,13 @@ public record IntegrationsConfig(
     public record BadcoreSettings(
             boolean enabled,
             long cooldownMs,
+            String scoreboardCommand,
+            String vipLabel,
+            String vipBadge,
             Database database,
-            Map<String, String> messages
+            Map<String, String> messages,
+            java.util.List<TabViewItem> tabViewItems,
+            java.util.List<ChatColorPreset> chatColors
     ) {
         public static final Map<String, String> DEFAULT_MESSAGES = Map.of(
                 "player-only", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>This command can only be used by players.</#CF8484>",
@@ -163,14 +168,50 @@ public record IntegrationsConfig(
                 "dbtest-fail", "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
         );
 
+        public static final java.util.List<TabViewItem> DEFAULT_TAB_VIEW_ITEMS = java.util.List.of(
+                new TabViewItem("pv", "Player Vault", "CHEST", "axvaults.vault.1", true),
+                new TabViewItem("og", "OG Tag", "NAME_TAG", "badcore.tabview.og", false),
+                new TabViewItem("winter", "Winter Tag", "SNOWBALL", "badcore.tabview.winter", false),
+                new TabViewItem("booster", "Booster Tag", "AMETHYST_SHARD", "badcore.tabview.booster", false)
+        );
+
+        public static final java.util.List<ChatColorPreset> DEFAULT_CHAT_COLORS = java.util.List.of(
+                new ChatColorPreset("fire", "Fire", "CREEPER_BANNER_PATTERN", "badcore.chatcolor.fire"),
+                new ChatColorPreset("ice", "Ice", "GUSTER_BANNER_PATTERN", "badcore.chatcolor.ice"),
+                new ChatColorPreset("toxic", "Toxic", "FLOW_BANNER_PATTERN", "badcore.chatcolor.toxic"),
+                new ChatColorPreset("amethyst", "Amethyst", "FLOWER_BANNER_PATTERN", "badcore.chatcolor.amethyst"),
+                new ChatColorPreset("gold", "Gold", "MOJANG_BANNER_PATTERN", "badcore.chatcolor.gold")
+        );
+
         public static final BadcoreSettings DISABLED = new BadcoreSettings(
-                false, 500L,
+                false, 500L, "sb", "VIP", " &7%vip%",
                 new Database(true, "localhost", 3306, "badcore_practice", "root", "", 6, 5000L, false, "badcore_qoa_settings"),
-                DEFAULT_MESSAGES);
+                DEFAULT_MESSAGES,
+                DEFAULT_TAB_VIEW_ITEMS,
+                DEFAULT_CHAT_COLORS);
 
         public String message(String key) {
             return messages.getOrDefault(key, DEFAULT_MESSAGES.getOrDefault(key,
                     "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>Missing message: " + key + "</#CF8484>"));
+        }
+
+        /** {@code badcore-settings.tabview.items.<id>:} entry. */
+        public record TabViewItem(
+                String id,
+                String name,
+                String material,
+                String permission,
+                boolean defaultEnabled
+        ) {
+        }
+
+        /** {@code badcore-settings.chatcolors.<id>:} entry. */
+        public record ChatColorPreset(
+                String id,
+                String name,
+                String material,
+                String permission
+        ) {
         }
 
         /** {@code badcore-settings.database:} section. */
@@ -276,6 +317,12 @@ public record IntegrationsConfig(
     private static BadcoreSettings readBadcoreSettings(ConfigReader reader) {
         boolean enabled = reader.bool("badcore-settings.enabled", false);
         long cooldownMs = reader.integer("badcore-settings.cooldown-ms", 0, 60_000, 500);
+        String scoreboardCommand = reader.string("badcore-settings.scoreboard-command", "sb").trim();
+        String vipLabel = reader.string("badcore-settings.messages.vip.label", "VIP").trim();
+        if (vipLabel.isEmpty()) {
+            vipLabel = "VIP";
+        }
+        String vipBadge = reader.string("badcore-settings.messages.vip.badge", " &7%vip%");
         boolean dbEnabled = reader.bool("badcore-settings.database.enabled", true);
         String host = reader.string("badcore-settings.database.host", "localhost").trim();
         int port = reader.integer("badcore-settings.database.port", 1, MAX_PORT, 3306);
@@ -299,7 +346,44 @@ public record IntegrationsConfig(
             String key = entry.getKey();
             messages.put(key, reader.string("badcore-settings.messages." + key, entry.getValue()));
         }
-        return new BadcoreSettings(enabled, cooldownMs, db, Map.copyOf(messages));
+
+        java.util.List<BadcoreSettings.TabViewItem> tabViewItems = new java.util.ArrayList<>();
+        for (String key : reader.optionalKeys("badcore-settings.tabview.items")) {
+            String base = "badcore-settings.tabview.items." + key;
+            String id = key.trim().toLowerCase(java.util.Locale.ROOT);
+            if (id.isEmpty()) {
+                continue;
+            }
+            String name = reader.string(base + ".name", key);
+            String material = reader.string(base + ".material", "NAME_TAG").trim();
+            String permission = reader.string(base + ".permission", "").trim();
+            boolean defaultEnabled = reader.bool(base + ".default_enabled", false);
+            tabViewItems.add(new BadcoreSettings.TabViewItem(id, name, material, permission, defaultEnabled));
+        }
+
+        java.util.List<BadcoreSettings.ChatColorPreset> chatColors = new java.util.ArrayList<>();
+        for (String key : reader.optionalKeys("badcore-settings.chatcolors")) {
+            String base = "badcore-settings.chatcolors." + key;
+            String id = key.trim().toLowerCase(java.util.Locale.ROOT);
+            if (id.isEmpty()) {
+                continue;
+            }
+            String name = reader.string(base + ".name", key);
+            String material = reader.string(base + ".material", "CREEPER_BANNER_PATTERN").trim();
+            String permission = reader.string(base + ".permission", "badcore.chatcolor." + id).trim();
+            chatColors.add(new BadcoreSettings.ChatColorPreset(id, name, material, permission));
+        }
+
+        return new BadcoreSettings(
+                enabled,
+                cooldownMs,
+                scoreboardCommand,
+                vipLabel,
+                vipBadge,
+                db,
+                Map.copyOf(messages),
+                java.util.List.copyOf(tabViewItems),
+                java.util.List.copyOf(chatColors));
     }
 
     private static VoiceChat readVoiceChat(ConfigReader reader) {

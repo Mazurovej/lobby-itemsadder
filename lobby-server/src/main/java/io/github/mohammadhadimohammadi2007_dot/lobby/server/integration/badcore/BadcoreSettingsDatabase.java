@@ -137,6 +137,24 @@ public final class BadcoreSettingsDatabase implements AutoCloseable {
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
                 """;
 
+        String createTabView = """
+                CREATE TABLE IF NOT EXISTS badcore_tabview_settings (
+                    uuid CHAR(36) NOT NULL,
+                    entry_id VARCHAR(64) NOT NULL,
+                    enabled TINYINT(1) NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    PRIMARY KEY (uuid, entry_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+
+        String createChatColor = """
+                CREATE TABLE IF NOT EXISTS badcore_chatcolor_settings (
+                    uuid CHAR(36) NOT NULL PRIMARY KEY,
+                    color_id VARCHAR(64) NOT NULL DEFAULT 'default',
+                    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+                """;
+
         try (Connection conn = getConnection(); Statement stmt = conn.createStatement()) {
             stmt.execute(createQoa);
             stmt.execute(createProfiles);
@@ -145,6 +163,8 @@ public final class BadcoreSettingsDatabase implements AutoCloseable {
             stmt.execute("ALTER TABLE practice_settings ADD COLUMN IF NOT EXISTS vip_join_message TINYINT(1) NOT NULL DEFAULT 1;");
             stmt.execute("ALTER TABLE practice_settings ADD COLUMN IF NOT EXISTS allow_spectators TINYINT(1) NOT NULL DEFAULT 1;");
             stmt.execute("ALTER TABLE practice_settings ADD COLUMN IF NOT EXISTS silent_spectate TINYINT(1) NOT NULL DEFAULT 1;");
+            stmt.execute(createTabView);
+            stmt.execute(createChatColor);
         }
     }
 

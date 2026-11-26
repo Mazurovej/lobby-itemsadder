@@ -187,6 +187,24 @@ public final class ConfigReader {
         return keysOf(node);
     }
 
+    /**
+     * Names in an optional map section, in file order: the user's if the section exists, otherwise the bundled
+     * ones, without warning when missing.
+     */
+    public List<String> optionalKeys(String path) {
+        ConfigurationNode node = user.node(split(path));
+        if (node.virtual() || node.raw() == null) {
+            ConfigurationNode bundled = defaults.node(split(path));
+            return bundled.virtual() || !bundled.isMap() ? List.of() : keysOf(bundled);
+        }
+        if (!node.isMap()) {
+            warnings.add(fileName + ": option '" + path + "' must be a section with named entries. Using the defaults.");
+            ConfigurationNode bundled = defaults.node(split(path));
+            return bundled.virtual() || !bundled.isMap() ? List.of() : keysOf(bundled);
+        }
+        return keysOf(node);
+    }
+
     private static List<String> keysOf(ConfigurationNode node) {
         List<String> keys = new ArrayList<>();
         for (Object key : node.childrenMap().keySet()) {

@@ -58,6 +58,7 @@ public final class Permissions {
     public static final String BADCORE_JOIN_MESSAGE = "badcore.join.message";
     public static final String BADCORE_SPECTATE_PRIVACY = "badcore.spectate.privacy";
     public static final String BADCORE_SPECTATE_SILENT = "badcore.spectate.silent";
+    public static final String BADCORE_CMD_CHATCOLOR = "badcore.cmd.chatcolor";
     public static final String DUELS_ADMIN = "duels.admin";
 
     /**

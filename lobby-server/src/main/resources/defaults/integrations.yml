@@ -147,7 +147,9 @@ badcore-settings:
   enabled: false
   # Cooldown between setting toggles in milliseconds (0 = no cooldown).
   cooldown-ms: 500
-  # MariaDB connection for QOA and Practice/Duels settings.
+  # Command executed when clicking Scoreboard in Gens Settings (without leading '/').
+  scoreboard-command: "sb"
+  # MariaDB connection for QOA, Practice, TabView, and ChatColor settings.
   # Set database.enabled to false to rely only on Velocity plugin-message sync.
   database:
     enabled: true
@@ -169,6 +171,52 @@ badcore-settings:
     dbtest-running: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#DDDDDD>Testing MariaDB connection...</#DDDDDD>"
     dbtest-ok: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#8ECF84>MariaDB OK (<white><target></white>, <white><version></white>, <white><latency>ms</white>).</#8ECF84>"
     dbtest-fail: "<white><bold>ꜱᴇʀᴠᴇʀ →</bold></white> <#CF8484>MariaDB failed (<white><target></white>, <white><latency>ms</white>): <white><error></white></#CF8484>"
+    vip:
+      label: "VIP"
+      badge: " &7%vip%"
+  tabview:
+    items:
+      pv:
+        name: "Player Vault"
+        material: "CHEST"
+        permission: "axvaults.vault.1"
+        default_enabled: true
+      og:
+        name: "OG Tag"
+        material: "NAME_TAG"
+        permission: "badcore.tabview.og"
+        default_enabled: false
+      winter:
+        name: "Winter Tag"
+        material: "SNOWBALL"
+        permission: "badcore.tabview.winter"
+        default_enabled: false
+      booster:
+        name: "Booster Tag"
+        material: "AMETHYST_SHARD"
+        permission: "badcore.tabview.booster"
+        default_enabled: false
+  chatcolors:
+    fire:
+      name: "Fire"
+      material: "CREEPER_BANNER_PATTERN"
+      permission: "badcore.chatcolor.fire"
+    ice:
+      name: "Ice"
+      material: "GUSTER_BANNER_PATTERN"
+      permission: "badcore.chatcolor.ice"
+    toxic:
+      name: "Toxic"
+      material: "FLOW_BANNER_PATTERN"
+      permission: "badcore.chatcolor.toxic"
+    amethyst:
+      name: "Amethyst"
+      material: "FLOWER_BANNER_PATTERN"
+      permission: "badcore.chatcolor.amethyst"
+    gold:
+      name: "Gold"
+      material: "MOJANG_BANNER_PATTERN"
+      permission: "badcore.chatcolor.gold"
 
 # ---------------- ModelEngine R4 ----------------
 # Renders ModelEngine R4 .bbmodel blueprints on NPCs (/npc model <npc> <model_id>) using

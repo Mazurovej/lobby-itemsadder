@@ -82,6 +82,14 @@ class BadcoreSettingsTest {
         IntegrationsConfig.BadcoreSettings def = defaults.current().integrations().badcoreSettings();
         assertFalse(def.enabled());
         assertEquals(500L, def.cooldownMs());
+        assertEquals("sb", def.scoreboardCommand());
+        assertEquals("VIP", def.vipLabel());
+        assertEquals(" &7%vip%", def.vipBadge());
+        assertEquals(4, def.tabViewItems().size());
+        assertEquals("pv", def.tabViewItems().get(0).id());
+        assertTrue(def.tabViewItems().get(0).defaultEnabled());
+        assertEquals(5, def.chatColors().size());
+        assertEquals("fire", def.chatColors().get(0).id());
         assertEquals("badcore_practice", def.database().database());
         assertEquals("badcore_qoa_settings", def.database().qoaTable());
         assertTrue(def.message("reloaded").contains("reloaded"));
@@ -94,6 +102,7 @@ class BadcoreSettingsTest {
         String edited = existing
                 .replace("badcore-settings:\n  enabled: false", "badcore-settings:\n  enabled: true")
                 .replace("cooldown-ms: 500", "cooldown-ms: 1200")
+                .replace("scoreboard-command: \"sb\"", "scoreboard-command: \"scoreboard\"")
                 .replace("qoa-table: \"badcore_qoa_settings\"", "qoa-table: \"custom_qoa_tbl\"");
         Files.writeString(customDir.resolve(ConfigManager.INTEGRATIONS_FILE), edited);
         custom.reload();
@@ -101,6 +110,7 @@ class BadcoreSettingsTest {
         IntegrationsConfig.BadcoreSettings loaded = custom.current().integrations().badcoreSettings();
         assertTrue(loaded.enabled());
         assertEquals(1200L, loaded.cooldownMs());
+        assertEquals("scoreboard", loaded.scoreboardCommand());
         assertEquals("custom_qoa_tbl", loaded.database().qoaTable());
     }
 
@@ -219,7 +229,10 @@ class BadcoreSettingsTest {
                 "VipStaff", Set.of(
                         Permissions.BADCORE_SETTINGS_USE,
                         Permissions.BADCORE_QOA_SOCIALSPY,
-                        Permissions.BADCORE_LOBBY_FLY)
+                        Permissions.BADCORE_LOBBY_FLY,
+                        "axvaults.vault.1",
+                        "badcore.tabview.og",
+                        "badcore.chatcolor.fire")
         ));
 
         BadcoreSettingsService service = new BadcoreSettingsService(perms);
@@ -227,9 +240,14 @@ class BadcoreSettingsTest {
         IntegrationsConfig.BadcoreSettings enabledBridgeOnly = new IntegrationsConfig.BadcoreSettings(
                 true,
                 0L,
+                "sb",
+                "VIP",
+                " &7%vip%",
                 new IntegrationsConfig.BadcoreSettings.Database(
                         false, "localhost", 3306, "badcore_practice", "root", "", 6, 5000L, false, "badcore_qoa_settings"),
-                IntegrationsConfig.BadcoreSettings.DEFAULT_MESSAGES);
+                IntegrationsConfig.BadcoreSettings.DEFAULT_MESSAGES,
+                IntegrationsConfig.BadcoreSettings.DEFAULT_TAB_VIEW_ITEMS,
+                IntegrationsConfig.BadcoreSettings.DEFAULT_CHAT_COLORS);
         service.reload(enabledBridgeOnly);
 
         EventNode<PlayerEvent> node = EventNode.type("badcore-test", EventFilter.PLAYER);
@@ -248,6 +266,7 @@ class BadcoreSettingsTest {
             service.openMenu(regular, "hub");
             env.tickWhile(() -> service.guis().openKind(regular) != BadcoreSettingsGuis.Kind.HUB, Duration.ofSeconds(2));
             assertEquals(Material.COMPASS, regular.getOpenInventory().getItemStack(BadcoreSettingsGuis.HUB_SLOT_GLOBAL).material());
+            assertEquals(Material.EMERALD, regular.getOpenInventory().getItemStack(BadcoreSettingsGuis.HUB_SLOT_GENS).material());
             assertEquals(Material.IRON_SWORD, regular.getOpenInventory().getItemStack(BadcoreSettingsGuis.HUB_SLOT_DUELS).material());
 
             service.guis().handleSlotClick(regular, BadcoreSettingsGuis.HUB_SLOT_GLOBAL);
@@ -267,7 +286,7 @@ class BadcoreSettingsTest {
                     .toList();
             assertTrue(sent.size() >= 2, "expected GET and SET messages on badcore:settings");
 
-            // Open Duels for Regular player: VIP Lobby Fly click must be blocked
+            // Open Practice for Regular player: VIP Lobby Fly click must be blocked
             service.guis().openDuels(regular);
             assertEquals(BadcoreSettingsGuis.Kind.DUELS, service.guis().openKind(regular));
             assertTrue(service.repository().getDuelsState(regular.getUuid()).lobbyFly());
@@ -294,8 +313,46 @@ class BadcoreSettingsTest {
             service.guis().handleSlotClick(staff, BadcoreSettingsGuis.DUELS_SLOT_LOBBY_FLY);
             assertFalse(service.repository().getDuelsState(staff.getUuid()).lobbyFly());
 
+            // Hub -> Gens -> TabView & ChatColor flows
+            service.guis().openHub(staff);
+            service.guis().handleSlotClick(staff, BadcoreSettingsGuis.HUB_SLOT_GENS);
+            assertEquals(BadcoreSettingsGuis.Kind.GENS, service.guis().openKind(staff));
+            assertEquals(Material.GLOWSTONE_DUST, staff.getOpenInventory().getItemStack(BadcoreSettingsGuis.GENS_SLOT_NAMETAG_PERF).material());
+            assertEquals(Material.MAGENTA_DYE, staff.getOpenInventory().getItemStack(BadcoreSettingsGuis.GENS_SLOT_CHATCOLOR).material());
+            assertEquals(Material.NAME_TAG, staff.getOpenInventory().getItemStack(BadcoreSettingsGuis.GENS_SLOT_TABVIEW).material());
+            assertEquals(Material.OAK_SIGN, staff.getOpenInventory().getItemStack(BadcoreSettingsGuis.GENS_SLOT_SCOREBOARD).material());
+
+            // Gens -> TabView
+            service.guis().handleSlotClick(staff, BadcoreSettingsGuis.GENS_SLOT_TABVIEW);
+            assertEquals(BadcoreSettingsGuis.Kind.TABVIEW, service.guis().openKind(staff));
+            // Slot 10 = pv (default true), slot 11 = og (default false)
+            assertTrue(service.repository().isTabViewEnabled(staff.getUuid(), "pv", true));
+            service.guis().handleSlotClick(staff, 10);
+            assertFalse(service.repository().isTabViewEnabled(staff.getUuid(), "pv", true));
+            service.guis().handleSlotClick(staff, 11);
+            assertTrue(service.repository().isTabViewEnabled(staff.getUuid(), "og", false));
+            // Hide All (slot 22) disables all tabview entries
+            service.guis().handleSlotClick(staff, 22);
+            assertFalse(service.repository().isTabViewEnabled(staff.getUuid(), "og", false));
+            // Back (slot 18) returns to Gens
+            service.guis().handleSlotClick(staff, 18);
+            assertEquals(BadcoreSettingsGuis.Kind.GENS, service.guis().openKind(staff));
+
+            // Gens -> ChatColor
+            service.guis().handleSlotClick(staff, BadcoreSettingsGuis.GENS_SLOT_CHATCOLOR);
+            assertEquals(BadcoreSettingsGuis.Kind.CHATCOLOR, service.guis().openKind(staff));
+            assertEquals("default", service.repository().getChatColorId(staff.getUuid()));
+            // Slot 10 = fire (unlocked for VipStaff), slot 11 = ice (locked)
+            service.guis().handleSlotClick(staff, 10);
+            assertEquals("fire", service.repository().getChatColorId(staff.getUuid()));
+            service.guis().handleSlotClick(staff, 11);
+            assertEquals("fire", service.repository().getChatColorId(staff.getUuid()), "locked chatcolor must not be selected");
+            // Reset (slot 22) resets to default
+            service.guis().handleSlotClick(staff, 22);
+            assertEquals("default", service.repository().getChatColorId(staff.getUuid()));
+
             // Close button closes inventory
-            service.guis().handleSlotClick(staff, BadcoreSettingsGuis.DUELS_SLOT_CLOSE);
+            service.guis().handleSlotClick(staff, 26);
             assertNull(service.guis().openKind(staff));
         } finally {
             service.shutdown();

@@ -44,10 +44,15 @@ public final class BadcoreSettingsCommand extends Command {
         globalSub.setDefaultExecutor((sender, context) -> openSection(sender, "global"));
         addSubcommand(globalSub);
 
-        Command duelsSub = new Command("duels", "practice");
-        duelsSub.setCondition(useCondition());
-        duelsSub.setDefaultExecutor((sender, context) -> openSection(sender, "duels"));
-        addSubcommand(duelsSub);
+        Command gensSub = new Command("gens");
+        gensSub.setCondition(useCondition());
+        gensSub.setDefaultExecutor((sender, context) -> openSection(sender, "gens"));
+        addSubcommand(gensSub);
+
+        Command practiceSub = new Command("practice", "duels");
+        practiceSub.setCondition(useCondition());
+        practiceSub.setDefaultExecutor((sender, context) -> openSection(sender, "practice"));
+        addSubcommand(practiceSub);
 
         Command reloadSub = new Command("reload");
         reloadSub.setCondition(adminCondition());
@@ -58,6 +63,47 @@ public final class BadcoreSettingsCommand extends Command {
         dbtestSub.setCondition(adminCondition());
         dbtestSub.setDefaultExecutor((sender, context) -> runDbTest(sender));
         addSubcommand(dbtestSub);
+    }
+
+    /** Standalone {@code /tabview} (aliases {@code tabtag}, {@code tabtags}, {@code toggletab}) command. */
+    public static Command tabViewCommand(BadcoreSettingsService service, PermissionService permissions) {
+        Command cmd = new Command("tabview", "tabtag", "tabtags", "toggletab");
+        cmd.setCondition((sender, commandString) -> {
+            boolean allowed = permissions.hasPermission(sender, Permissions.BADCORE_SETTINGS_USE);
+            if (!allowed && commandString != null) {
+                service.sendMessage(sender, "no-permission");
+            }
+            return allowed;
+        });
+        cmd.setDefaultExecutor((sender, context) -> {
+            if (!(sender instanceof Player player)) {
+                service.sendMessage(sender, "player-only");
+                return;
+            }
+            service.openMenu(player, "tabview");
+        });
+        return cmd;
+    }
+
+    /** Standalone {@code /chatcolor} (aliases {@code chatcolors}, {@code ccolor}) command. */
+    public static Command chatColorCommand(BadcoreSettingsService service, PermissionService permissions) {
+        Command cmd = new Command("chatcolor", "chatcolors", "ccolor");
+        cmd.setCondition((sender, commandString) -> {
+            boolean allowed = permissions.hasPermission(sender, Permissions.BADCORE_CMD_CHATCOLOR)
+                    || permissions.hasPermission(sender, Permissions.BADCORE_SETTINGS_USE);
+            if (!allowed && commandString != null) {
+                service.sendMessage(sender, "no-permission");
+            }
+            return allowed;
+        });
+        cmd.setDefaultExecutor((sender, context) -> {
+            if (!(sender instanceof Player player)) {
+                service.sendMessage(sender, "player-only");
+                return;
+            }
+            service.openMenu(player, "chatcolor");
+        });
+        return cmd;
     }
 
     private net.minestom.server.command.builder.condition.CommandCondition useCondition() {

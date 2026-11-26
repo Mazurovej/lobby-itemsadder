@@ -493,8 +493,14 @@ public final class LobbyServer implements ServerInfo {
                 player -> badcoreSettings.openMenu(player, "hub"));
         menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_GLOBAL,
                 player -> badcoreSettings.openMenu(player, "global"));
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_GENS,
+                player -> badcoreSettings.openMenu(player, "gens"));
         menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_DUELS,
                 player -> badcoreSettings.openMenu(player, "duels"));
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_TABVIEW,
+                player -> badcoreSettings.openMenu(player, "tabview"));
+        menus.addCustom(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsService.MENU_CHATCOLOR,
+                player -> badcoreSettings.openMenu(player, "chatcolor"));
         actions.menus(menus);
         actions.lobbies(lobbies);
     }
@@ -703,6 +709,10 @@ public final class LobbyServer implements ServerInfo {
         commands.register(new CosmeticsCommand(cosmeticsMenu, text, permissions));
         commands.register(new io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsCommand(
                 badcoreSettings, configManager, permissions));
+        commands.register(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsCommand
+                .tabViewCommand(badcoreSettings, permissions));
+        commands.register(io.github.mohammadhadimohammadi2007_dot.lobby.server.integration.badcore.BadcoreSettingsCommand
+                .chatColorCommand(badcoreSettings, permissions));
         commands.register(new VanishCommand(vanish, text, permissions));
         commands.register(new StopCommand(text, permissions));
         new VanillaCommands(text, permissions, tickStats, StartupBanner.version(), hotbar::give).commands()
